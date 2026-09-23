@@ -100,8 +100,8 @@
     header { padding: 14px 12px 2px; }
     header h1 { font-size: 1.25rem; }
     header p { font-size: .82rem; }
-    nav.modes { padding: 0 12px; gap: 4px; flex-wrap: nowrap; }
-    nav.modes button { flex: 1; padding: 9px 6px; font-size: .84rem; white-space: nowrap; }
+    nav.modes { padding: 0 12px; gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    nav.modes button { flex: 1 0 auto; padding: 9px 10px; font-size: .84rem; white-space: nowrap; }
     .mode { padding: 10px 12px 28px; gap: 12px; }
     .card { padding: 12px; }
     .card + .card { margin-top: 12px; }
@@ -152,6 +152,7 @@
 <nav class="modes" id="modeTabs">
   <button data-m="single" class="active">Single Box</button>
   <button data-m="mix">Load Planner</button>
+  <button data-m="pallet">Pallets</button>
   <button data-m="settings">Vehicles</button>
 </nav>
 
@@ -212,13 +213,8 @@
 <main class="mode hidden" id="mode-mix">
   <section class="noprint">
     <div class="card">
-      <div class="unitline">
-        <h2 style="margin:0">Shipment</h2>
-        <select id="m-unit" aria-label="Box unit">
-          <option value="cm">cm</option><option value="in">in</option><option value="mm">mm</option><option value="ft">ft</option>
-        </select>
-      </div>
-      <div id="m-items" style="margin-top:10px"></div>
+      <h2>Shipment</h2>
+      <div id="m-items"></div>
       <button class="btn ghost" id="m-add">+ Add box type</button>
       <label class="check"><input type="checkbox" id="m-fill"> Fill empty spaces with other box types (on top of stacks and in side gaps)</label>
       <p class="note">Box types are loaded in list order, first type nearest the cabin.</p>
@@ -255,6 +251,80 @@
 </main>
 
 <!-- ================= MODE 3: VEHICLES ================= -->
+<!-- ================= MODE: PALLETS ================= -->
+<main class="mode hidden" id="mode-pallet">
+  <section class="noprint">
+    <div class="card">
+      <h2>Vehicle</h2>
+      <div class="chips" id="p-vehicles"></div>
+      <p class="note" id="p-vehinfo"></p>
+    </div>
+    <div class="card">
+      <div class="unitline">
+        <h2 style="margin:0">Pallet</h2>
+        <select id="p-unit" aria-label="Pallet unit">
+          <option value="cm">cm</option><option value="in">in</option><option value="mm">mm</option><option value="ft">ft</option>
+        </select>
+      </div>
+      <label for="p-preset" style="margin-top:10px">Standard size</label>
+      <select id="p-preset">
+        <option value="120x100">1200 × 1000 mm (ISO / India standard)</option>
+        <option value="120x80">1200 × 800 mm (Euro)</option>
+        <option value="121.92x101.6">48 × 40 in (US / GMA)</option>
+        <option value="110x110">1100 × 1100 mm (Asia)</option>
+        <option value="114x114">1140 × 1140 mm</option>
+        <option value="custom">Custom</option>
+      </select>
+      <div class="row" style="margin-top:8px">
+        <div><label for="p-L">Length</label><input type="number" id="p-L" step="any" min="0"></div>
+        <div><label for="p-W">Width</label><input type="number" id="p-W" step="any" min="0"></div>
+        <div><label for="p-base">Pallet base height</label><input type="number" id="p-base" step="any" min="0"></div>
+      </div>
+      <div class="row2" style="margin-top:8px">
+        <div><label for="p-H">Loaded height (total)</label><input type="number" id="p-H" step="any" min="0"></div>
+        <div><label for="p-wt">Weight per pallet (kg)</label><input type="number" id="p-wt" step="any" min="0" placeholder="Optional"></div>
+      </div>
+      <p class="note" id="p-hnote"></p>
+      <label class="check"><input type="checkbox" id="p-rot"> Allow 90° rotation on floor</label>
+      <label class="check"><input type="checkbox" id="p-stack"> Stackable (pallet on pallet)</label>
+      <div id="p-stackrow" class="row2" style="margin-top:6px">
+        <div><label for="p-maxS">Max stack levels</label><input type="number" id="p-maxS" step="1" min="1"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Boxes on Pallet <span class="note">(optional)</span></h2>
+      <div class="row">
+        <div><label for="p-bL">Box length</label><input type="number" id="p-bL" step="any" min="0"></div>
+        <div><label for="p-bW">Box width</label><input type="number" id="p-bW" step="any" min="0"></div>
+        <div><label for="p-bH">Box height</label><input type="number" id="p-bH" step="any" min="0"></div>
+      </div>
+      <div class="row2" style="margin-top:8px">
+        <div><label for="p-maxLoad">Max load height on pallet</label><input type="number" id="p-maxLoad" step="any" min="0" placeholder="Fill vehicle height"></div>
+      </div>
+      <p class="note">When box size is entered, loaded height is calculated automatically. Boxes are not allowed to overhang the pallet.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2 class="print-title" id="p-printtitle"></h2>
+      <div class="head-row"><h2>Result</h2><button class="btn ghost noprint" data-print>Print / PDF</button></div>
+      <div class="big" id="p-stats"></div>
+      <div id="p-msgs"></div>
+    </div>
+    <div class="card" id="p-viewer"></div>
+    <div class="card">
+      <h2>Loading Instructions</h2>
+      <ol class="steps" id="p-steps"></ol>
+    </div>
+    <div class="card noprint">
+      <h2>Pallets by Vehicle</h2>
+      <div class="tablewrap"><table id="p-allveh"></table></div>
+      <p class="note">Click a row to select that vehicle.</p>
+    </div>
+  </section>
+</main>
+
 <main class="mode single-col hidden" id="mode-settings">
   <section>
     <div class="card">
@@ -305,6 +375,7 @@ const DEFAULT_STATE = {
   vehicles: clone(DEFAULT_VEHICLES),
   gaps: { top: 10, door: 0, side: 0 },
   single: { veh: "20", unit: "cm", L: 60, W: 40, H: 30, wt: "", maxL: "", rot: true, up: true },
+  pallet: { veh: "20", unit: "cm", preset: "120x100", L: 120, W: 100, base: 15, H: 150, wt: "", rot: true, stack: false, maxS: 2, bL: "", bW: "", bH: "", maxLoad: "" },
   mix: {
     unit: "cm", off: {}, fill: true, target: "auto",
     items: [
@@ -319,7 +390,7 @@ function loadState() {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const s = JSON.parse(raw);
-      return { ...clone(DEFAULT_STATE), ...s, single: { ...DEFAULT_STATE.single, ...s.single }, mix: { ...clone(DEFAULT_STATE.mix), ...s.mix }, gaps: { ...DEFAULT_STATE.gaps, ...s.gaps } };
+      return { ...clone(DEFAULT_STATE), ...s, single: { ...DEFAULT_STATE.single, ...s.single }, pallet: { ...DEFAULT_STATE.pallet, ...s.pallet }, mix: { ...clone(DEFAULT_STATE.mix), ...s.mix }, gaps: { ...DEFAULT_STATE.gaps, ...s.gaps } };
     }
   } catch (e) {}
   return clone(DEFAULT_STATE);
@@ -496,8 +567,9 @@ function calcSingle(v, box) {
 }
 
 function blockText(bl, conv) {
-  return `<b>${conv(bl.pa)}</b> side along truck length, <b>${conv(bl.pb)}</b> across — <b>${bl.cx}</b> × <b>${bl.cy}</b> = <b>${bl.count}</b> boxes`;
+  return `<b>${conv(bl.pa)}</b> side along truck length, <b>${conv(bl.pb)}</b> across — <b>${bl.cx}</b> × <b>${bl.cy}</b> = <b>${bl.count}</b> ${plural(bl.count, "box", "boxes")}`;
 }
+const plural = (n, one, many) => n === 1 ? one : many;
 function convFor(unit) { return v => fmt(v / TO_MM[unit], 1) + " " + UNIT_NAME[unit]; }
 
 function renderSingle() {
@@ -577,13 +649,105 @@ function renderSingle() {
 }
 
 // ============================================================
+// MODE: pallets
+// ============================================================
+// Pallet footprint and loaded height for vehicle v; builds the pallet from boxes when box size is given.
+function palletSpec(v) {
+  const p = S.pallet, u = TO_MM[p.unit], tr = truckOf(v);
+  const spec = { L: Math.ceil(+p.L * u), W: Math.ceil(+p.W * u), base: Math.ceil((+p.base || 0) * u), H: Math.ceil(+p.H * u), boxes: 0, auto: false };
+  const b = { L: Math.ceil(+p.bL * u), W: Math.ceil(+p.bW * u), H: Math.ceil(+p.bH * u) };
+  if (b.L > 0 && b.W > 0 && b.H > 0) {
+    const levels = p.stack ? Math.max(1, parseInt(p.maxS) || 1) : 1;
+    const maxLoad = +p.maxLoad > 0 ? +p.maxLoad * u : (tr.valid ? Math.floor(tr.U.H / levels) - spec.base : 0);
+    const pack = pack2D(spec.L, spec.W, b.L, b.W, true);
+    const layers = Math.max(0, Math.floor(maxLoad / b.H));
+    Object.assign(spec, { auto: true, box: b, boxPack: pack, boxLayers: layers, boxes: pack.count * layers, H: spec.base + layers * b.H });
+  }
+  return spec;
+}
+function calcPallet(v) {
+  const p = S.pallet, spec = palletSpec(v);
+  if (!(spec.L > 0 && spec.W > 0 && spec.H > 0)) return { v, ok: false, spec, error: "Enter pallet dimensions." };
+  if (spec.auto && spec.boxes === 0) return { v, ok: false, spec, error: "Boxes do not fit on this pallet within the load height." };
+  const r = calcSingle(v, { L: spec.L, W: spec.W, H: spec.H, up: true, rot: p.rot, maxL: p.stack ? Math.max(1, parseInt(p.maxS) || 1) : 1, wt: +p.wt || 0 });
+  if (!r.ok) r.error = r.error.replace("Box does not fit", "Pallet does not fit").replace("Enter all box dimensions", "Enter pallet dimensions");
+  r.spec = spec;
+  return r;
+}
+function renderPallet() {
+  const p = S.pallet;
+  const v = S.vehicles.find(x => x.id === p.veh) || S.vehicles[0];
+  if (v) p.veh = v.id;
+  $("p-vehicles").innerHTML = S.vehicles.map(x => `<button data-id="${esc(x.id)}" class="${v && x.id === v.id ? "active" : ""}">${esc(x.name)}</button>`).join("");
+  $("p-stackrow").classList.toggle("hidden", !p.stack);
+  if (!v) { $("p-stats").innerHTML = ""; $("p-msgs").innerHTML = `<div class="msg">Add a vehicle in the Vehicles tab.</div>`; return; }
+  $("p-vehinfo").innerHTML = `Internal: ${v.L} × ${v.W} × ${v.H} ft · Payload ${fmt(+v.kg || 0)} kg${hasRate(v) ? ` · ₹${fmt(v.rate)}/trip` : ""} · <a href="#" data-goto="settings">Edit</a>`;
+  const res = calcPallet(v), spec = res.spec, conv = convFor(p.unit);
+  $("p-H").disabled = spec.auto;
+  $("p-hnote").textContent = spec.auto ? `Loaded height calculated from boxes: ${conv(spec.H)} (base ${conv(spec.base)} + ${spec.boxLayers} × ${conv(spec.box.H)}).` : "";
+  $("p-printtitle").textContent = `Pallet Load Plan — ${v.name} vehicle, pallet ${p.L} × ${p.W} ${UNIT_NAME[p.unit]}`;
+
+  if (!res.ok) {
+    $("p-stats").innerHTML = `<div class="stat main"><div class="v">0</div><div class="k">Total pallets</div></div>`;
+    $("p-msgs").innerHTML = `<div class="msg">${res.error}</div>`;
+    $("p-steps").innerHTML = "";
+    viewers.pallet.show(null);
+  } else {
+    const b = res.best, floorUse = b.perLayer * spec.L * spec.W / (res.T.L * res.T.W) * 100;
+    $("p-stats").innerHTML = `
+      <div class="stat main"><div class="v">${fmt(res.final)}</div><div class="k">Total pallets</div></div>
+      <div class="stat"><div class="v">${fmt(b.perLayer)}</div><div class="k">Floor positions</div></div>
+      <div class="stat"><div class="v">${b.layers}</div><div class="k">Stack levels</div></div>
+      <div class="stat"><div class="v">${fmt(floorUse, 1)}%</div><div class="k">Floor utilisation</div></div>
+      ${spec.auto ? `<div class="stat"><div class="v">${fmt(res.final * spec.boxes)}</div><div class="k">Total boxes (${fmt(spec.boxes)}/pallet)</div></div>` : ""}
+      ${+p.wt > 0 ? `<div class="stat"><div class="v">${fmt(res.final * p.wt)} kg</div><div class="k">Total weight</div></div>` : ""}
+      ${hasRate(v) ? `<div class="stat"><div class="v">₹${fmt(v.rate / res.final, 0)}</div><div class="k">Freight per pallet</div></div>` : ""}`;
+    const m = [];
+    if (res.final < b.total) m.push(`<div class="msg">Space allows ${fmt(b.total)} pallets; payload limit (${fmt(v.kg)} kg) caps the load at <b>${fmt(res.final)}</b>.</div>`);
+    if (p.stack && b.layers < (parseInt(p.maxS) || 1)) m.push(`<div class="msg">Vehicle height allows only ${b.layers} stack level${b.layers > 1 ? "s" : ""}.</div>`);
+    const usedL = Math.max(...b.pack.blocks.map(bl => bl.x + bl.cx * bl.pa)), usedW = Math.max(...b.pack.blocks.map(bl => bl.y + bl.cy * bl.pb));
+    m.push(`<div class="msg ok">Unused space — length: ${cm(res.T.L - usedL)}, width: ${cm(res.T.W - usedW)}, height: ${cm(res.T.H - b.layers * b.h)}.</div>`);
+    $("p-msgs").innerHTML = m.join("");
+
+    const palletText = bl => `<b>${conv(bl.pa)}</b> side along truck length, <b>${conv(bl.pb)}</b> across — <b>${bl.cx}</b> × <b>${bl.cy}</b> = <b>${bl.count}</b> pallet${bl.count === 1 ? "" : "s"}`;
+    const steps = [];
+    if (spec.auto) steps.push(`Build each pallet: ${spec.boxPack.blocks.map(bl => blockText(bl, conv).replace("truck length", "pallet length")).join("; ")} per layer, ${spec.boxLayers} layers = <b>${fmt(spec.boxes)}</b> boxes. No overhang.`);
+    steps.push(`Load from the front wall (cabin side). ${res.gaps.side > 0 ? `Leave ${cm(res.gaps.side)} on each side.` : "Keep pallets flush against one side wall."}`);
+    b.pack.blocks.forEach((bl, n) => steps.push(`<span class="sw" style="background:${bl.o ? PALETTE[5] : PALETTE[2]}"></span><b>Block ${n + 1}</b> (from front ${cm(bl.x)}–${cm(bl.x + bl.cx * bl.pa)}, from side ${cm(bl.y)}–${cm(bl.y + bl.cy * bl.pb)}): ${palletText(bl)}.`));
+    if (b.layers > 1) steps.push(`Stack <b>${b.layers}</b> levels (${conv(b.h)} each).`);
+    steps.push(`Maintain a minimum ${cm(res.gaps.top)} air gap at the top. Total: ${fmt(b.perLayer)} × ${b.layers} = <b>${fmt(b.total)}</b> pallets${res.final < b.total ? ` (stop at ${fmt(res.final)} — payload limit)` : ""}.`);
+    $("p-steps").innerHTML = steps.map(s => `<li>${s}</li>`).join("");
+
+    viewers.pallet.show({
+      T: res.T, gaps: res.gaps, list: placementsFrom(b.pack, b, 0, res.final, PALETTE[2], PALETTE[5]),
+      labels: b.pack.blocks.map((bl, n) => ({ x: bl.x, y: bl.y, w: bl.cx * bl.pa, d: bl.cy * bl.pb, text: `${n + 1}: ${bl.cx}×${bl.cy}` })),
+      legend: [{ c: PALETTE[2], t: "Orientation A" }, ...(b.pack.blocks.some(x => x.o) ? [{ c: PALETTE[5], t: "Orientation B (rotated 90°)" }] : [])],
+      caption: `${fmt(b.perLayer)} floor positions × ${b.layers} level${b.layers > 1 ? "s" : ""}`
+    });
+  }
+
+  const rows = S.vehicles.map(x => ({ x, r: calcPallet(x) }));
+  const costs = rows.filter(o => o.r.ok && hasRate(o.x)).map(o => o.x.rate / o.r.final);
+  const minCost = costs.length ? Math.min(...costs) : null;
+  $("p-allveh").innerHTML = `<tr><th>Vehicle</th><th class="num">Floor</th><th class="num">Levels</th><th class="num">Pallets</th>${spec.auto ? '<th class="num">Boxes</th>' : ""}<th class="num">₹ / pallet</th></tr>` +
+    rows.map(({ x, r }) => {
+      const cost = r.ok && hasRate(x) ? x.rate / r.final : null, cheapest = cost !== null && cost === minCost;
+      return `<tr class="click ${x.id === v.id ? "sel" : ""} ${cheapest ? "best" : ""}" data-veh="${esc(x.id)}">
+        <td>${esc(x.name)}${cheapest ? '<span class="badge">Lowest cost</span>' : ""}</td>
+        <td class="num">${r.ok ? fmt(r.best.perLayer) : "—"}</td><td class="num">${r.ok ? r.best.layers : "—"}</td>
+        <td class="num">${r.ok ? fmt(r.final) + (r.final < r.best.total ? " (payload)" : "") : "Does not fit"}</td>
+        ${spec.auto ? `<td class="num">${r.ok ? fmt(r.final * r.spec.boxes) : "—"}</td>` : ""}
+        <td class="num">${cost !== null ? "₹" + fmt(cost, 0) : "—"}</td></tr>`;
+    }).join("");
+}
+
+// ============================================================
 // MODE 2: load planner (multiple box types, multiple trucks)
 // ============================================================
 function mixTypes() {
-  const u = TO_MM[S.mix.unit];
   return S.mix.items.map((it, i) => ({
-    i, name: it.name || `Box ${i + 1}`, color: PALETTE[i % PALETTE.length],
-    L: Math.ceil(+it.L * u), W: Math.ceil(+it.W * u), H: Math.ceil(+it.H * u),
+    i, name: it.name || `Box ${i + 1}`, color: PALETTE[i % PALETTE.length], unit: it.unit || S.mix.unit,
+    L: Math.ceil(+it.L * TO_MM[it.unit || S.mix.unit]), W: Math.ceil(+it.W * TO_MM[it.unit || S.mix.unit]), H: Math.ceil(+it.H * TO_MM[it.unit || S.mix.unit]),
     qty: Math.max(0, Math.floor(+it.qty || 0)), wt: +it.wt || 0, maxL: parseInt(it.maxL) || 0, up: !!it.up, rot: !!it.rot
   })).filter(t => t.L > 0 && t.W > 0 && t.H > 0 && t.qty > 0);
 }
@@ -714,7 +878,7 @@ function computePlans() {
     .filter(p => !seen.has(p.name) && seen.add(p.name));
   const allCost = out.length && out.every(p => p.cost !== null);
   out.sort((a, b) => allCost ? a.cost - b.cost || a.trucks.length - b.trucks.length : a.trucks.length - b.trucks.length || a.vol - b.vol);
-  const fitsOne = S.vehicles.filter(v => singles[v.id] && singles[v.id].length === 1).map(v => v.name);
+  const fitsOne = S.vehicles.filter(v => singles[v.id] && singles[v.id].length === 1).sort((a, b) => vehVolume(a) - vehVolume(b)).map(v => v.name);
   return { plans: out, failures, types, allCost, target, fitsOne };
 }
 let mixTimer;
@@ -748,8 +912,9 @@ function renderMix() {
       m.push(`<div class="msg">Does not fit in one ${esc(target.name)}. One vehicle carries: ${contents(first)}. Remaining: <b>${over.map(o => `${esc(o.x.name)} ${fmt(o.n)}`).join(", ")}</b> — ${best.trucks.length} × ${esc(target.name)} required.</div>`);
     }
   } else if (best) {
+    if (fitsOne.length) m.push(`<div class="msg ok"><b>✔ Fits in one vehicle.</b> Smallest vehicle: <b>${esc(fitsOne[0])}</b>${fitsOne.length > 1 ? ` (also fits: ${fitsOne.slice(1).map(esc).join(", ")})` : ""}.</div>`);
+    else m.push(`<div class="msg"><b>✘ Does not fit in any single vehicle.</b> Send: <b>${esc(best.name)}</b>.</div>`);
     m.push(`<div class="msg ok">Recommended: <b>${esc(best.name)}</b>${best.cost !== null ? ` — ₹${fmt(best.cost)}` : ""}.${allCost ? "" : " Freight rates not set; ranked by fewest and smallest vehicles."}</div>`);
-    m.push(`<div class="msg ${fitsOne.length ? "ok" : ""}">${fitsOne.length ? `Fits in a single vehicle: <b>${fitsOne.map(esc).join(", ")}</b>.` : "Does not fit in any single vehicle."}</div>`);
   }
   if (failures.length) m.push(`<div class="msg">Not feasible — ${failures.map(esc).join("; ")}.</div>`);
   if (!plans.length) m.push(`<div class="msg">No feasible plan. Check box and vehicle dimensions.</div>`);
@@ -772,7 +937,7 @@ function renderTruck() {
   if (!p) { $("m-trucks").innerHTML = ""; $("m-steps").innerHTML = ""; $("m-truckinfo").textContent = ""; viewers.mix.show(null); return; }
   if (selTruck >= p.trucks.length) selTruck = 0;
   $("m-trucks").innerHTML = p.trucks.map((t, i) => `<button data-truck="${i}" class="${i === selTruck ? "active" : ""}">Truck ${i + 1} <small>${esc(t.v.name)} · ${fmt(t.count)} boxes</small></button>`).join("");
-  const t = p.trucks[selTruck], conv = convFor(S.mix.unit);
+  const t = p.trucks[selTruck];
   const allTypes = mixTypes();
   $("m-truckinfo").innerHTML = `<b>Truck ${selTruck + 1} (${esc(t.v.name)})</b> — ${allTypes.filter(x => t.byType[x.i]).map(x => `<span class="sw" style="background:${x.color}"></span>${esc(x.name)}: <b>${fmt(t.byType[x.i])}</b>`).join(" · ")}
     <br>${fmt(t.count)} boxes · ${fmt(truckFill(t), 1)}% space used${t.wt > 0 ? ` · ${fmt(t.wt)} / ${fmt(t.v.kg)} kg` : ""} · Free length at door: ${cm(t.tr.T.L - t.sections.reduce((s, x) => Math.max(s, x.x0 + x.len), 0))}`;
@@ -781,15 +946,17 @@ function renderTruck() {
   let list = [];
   const labels = [];
   t.sections.forEach((s, k) => {
+    const conv = convFor(s.t.unit); // box sizes in the unit this box was entered in
     const cap = s.pack.count * s.opt.layers;
     const sub = s.pack.blocks.map(bl => `<li>${s.pack.blocks.length > 1 ? `From front ${cm(s.x0 + bl.x)}–${cm(s.x0 + bl.x + bl.cx * bl.pa)}, from side ${cm(bl.y)}–${cm(bl.y + bl.cy * bl.pb)}: ` : ""}${blockText(bl, conv)} per layer</li>`).join("");
-    steps.push(`<span class="sw" style="background:${s.t.color}"></span><b>Section ${k + 1}: ${esc(s.t.name)} — ${fmt(s.n)} boxes</b> (from front ${cm(s.x0)}–${cm(s.x0 + s.len)})
+    steps.push(`<span class="sw" style="background:${s.t.color}"></span><b>Section ${k + 1}: ${esc(s.t.name)} — ${fmt(s.n)} ${plural(s.n, "box", "boxes")}</b> (from front ${cm(s.x0)}–${cm(s.x0 + s.len)})
       ${s.opt.up !== 2 ? `<br>Boxes on side — ${SIDE_NAME[s.opt.up]} (${conv(s.opt.h)}) vertical.` : ""}
-      <ul>${sub}<li>Stack up to ${s.opt.layers} layers${s.n < cap ? ` (last row: ${fmt(cap - s.n)} positions empty)` : ""}</li></ul>`);
+      <ul>${sub}<li>${s.opt.layers === 1 ? "Single layer (no stacking)" : `Stack up to ${s.opt.layers} layers`}${s.n < cap ? ` (last row: ${fmt(cap - s.n)} ${plural(cap - s.n, "position", "positions")} empty)` : ""}</li></ul>`);
     list = list.concat(s.list);
     labels.push({ x: s.x0, y: 0, w: s.len, d: Math.max(...s.pack.blocks.map(bl => bl.y + bl.cy * bl.pb)), text: `${k + 1}: ${s.t.name}`, section: true });
   });
   t.fills.forEach(f => {
+    const conv = convFor(f.t.unit);
     const secNo = t.sections.indexOf(f.sp.sec) + 1;
     const xs = f.list.map(p => p.x), ys = f.list.map(p => p.y);
     const x1 = Math.min(...xs), x2 = Math.max(...f.list.map(p => p.x + p.l));
@@ -809,7 +976,6 @@ function renderTruck() {
 }
 
 function renderMixInputs(full = true) {
-  $("m-unit").value = S.mix.unit;
   $("m-fill").checked = S.mix.fill;
   if (S.mix.target !== "auto" && !S.vehicles.some(v => v.id === S.mix.target)) S.mix.target = "auto";
   $("m-target").innerHTML = `<option value="auto">Auto — recommend best plan</option>` +
@@ -821,6 +987,7 @@ function renderMixInputs(full = true) {
   $("m-items").innerHTML = S.mix.items.map((it, i) => `
     <div class="item" style="--c:${PALETTE[i % PALETTE.length]}" data-i="${i}">
       <div class="top"><input type="text" data-f="name" value="${esc(it.name)}" aria-label="Name">
+        <select data-f="unit" aria-label="Unit" style="width:auto">${["cm", "in", "mm", "ft"].map(u => `<option value="${u}" ${(it.unit || S.mix.unit) === u ? "selected" : ""}>${u}</option>`).join("")}</select>
         ${S.mix.items.length > 1 ? `<button class="btn danger" data-del="${i}" title="Remove">✕</button>` : ""}</div>
       <div class="row">
         <div><label>Length</label><input type="number" step="any" min="0" data-f="L" value="${esc(it.L)}"></div>
@@ -942,12 +1109,14 @@ function drawSide(svg, d, W = 1000) {
 // ============================================================
 // Wiring
 // ============================================================
-const viewers = { single: new Viewer("s"), mix: new Viewer("m") };
+const viewers = { single: new Viewer("s"), mix: new Viewer("m"), pallet: new Viewer("p") };
+const MODES = ["single", "mix", "pallet", "settings"];
 function setMode(m) {
   S.mode = m; save();
   document.querySelectorAll("#modeTabs button").forEach(b => b.classList.toggle("active", b.dataset.m === m));
-  ["single", "mix", "settings"].forEach(x => $("mode-" + x).classList.toggle("hidden", x !== m));
+  MODES.forEach(x => $("mode-" + x).classList.toggle("hidden", x !== m));
   if (m === "single") renderSingle();
+  if (m === "pallet") renderPallet();
   if (m === "mix") { renderMixInputs(); renderMix(); }
   if (m === "settings") renderSettings();
   Object.values(viewers).forEach(v => v.gl && v.gl.resize());
@@ -972,6 +1141,37 @@ $("s-unit").addEventListener("change", e => {
 $("s-vehicles").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { S.single.veh = b.dataset.id; save(); renderSingle(); } });
 $("s-allveh").addEventListener("click", e => { const r = e.target.closest("tr[data-veh]"); if (r) { S.single.veh = r.dataset.veh; save(); renderSingle(); } });
 
+// Pallet inputs
+const pFields = ["L", "W", "base", "H", "wt", "maxS", "bL", "bW", "bH", "maxLoad"];
+pFields.forEach(f => {
+  $("p-" + f).value = S.pallet[f];
+  $("p-" + f).addEventListener("input", e => {
+    S.pallet[f] = e.target.value;
+    if (f === "L" || f === "W") { S.pallet.preset = "custom"; $("p-preset").value = "custom"; }
+    save(); renderPallet();
+  });
+});
+$("p-unit").value = S.pallet.unit; $("p-preset").value = S.pallet.preset;
+$("p-rot").checked = S.pallet.rot; $("p-stack").checked = S.pallet.stack;
+$("p-rot").addEventListener("change", e => { S.pallet.rot = e.target.checked; save(); renderPallet(); });
+$("p-stack").addEventListener("change", e => { S.pallet.stack = e.target.checked; save(); renderPallet(); });
+$("p-preset").addEventListener("change", e => {
+  S.pallet.preset = e.target.value;
+  if (e.target.value !== "custom") {
+    const [l, w] = e.target.value.split("x").map(Number), k = 10 / TO_MM[S.pallet.unit]; // presets are in cm
+    S.pallet.L = +(l * k).toFixed(2); S.pallet.W = +(w * k).toFixed(2);
+    $("p-L").value = S.pallet.L; $("p-W").value = S.pallet.W;
+  }
+  save(); renderPallet();
+});
+$("p-unit").addEventListener("change", e => {
+  const k = TO_MM[S.pallet.unit] / TO_MM[e.target.value];
+  ["L", "W", "base", "H", "bL", "bW", "bH", "maxLoad"].forEach(f => { if (S.pallet[f] !== "") S.pallet[f] = +(S.pallet[f] * k).toFixed(2); $("p-" + f).value = S.pallet[f]; });
+  S.pallet.unit = e.target.value; save(); renderPallet();
+});
+$("p-vehicles").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { S.pallet.veh = b.dataset.id; save(); renderPallet(); } });
+$("p-allveh").addEventListener("click", e => { const r = e.target.closest("tr[data-veh]"); if (r) { S.pallet.veh = r.dataset.veh; save(); renderPallet(); } });
+
 // Load planner inputs
 $("m-items").addEventListener("input", e => {
   const box = e.target.closest(".item"), f = e.target.dataset.f; if (!box || !f) return;
@@ -984,13 +1184,9 @@ $("m-items").addEventListener("click", e => {
   S.mix.items.splice(+d.dataset.del, 1); save(); renderMixInputs(); renderMix();
 });
 $("m-add").addEventListener("click", () => {
-  S.mix.items.push({ name: `Box ${String.fromCharCode(65 + S.mix.items.length)}`, L: "", W: "", H: "", qty: "", wt: "", maxL: "", up: true, rot: true });
+  const last = S.mix.items[S.mix.items.length - 1];
+  S.mix.items.push({ name: `Box ${String.fromCharCode(65 + S.mix.items.length)}`, unit: (last && last.unit) || S.mix.unit, L: "", W: "", H: "", qty: "", wt: "", maxL: "", up: true, rot: true });
   save(); renderMixInputs(); renderMix();
-});
-$("m-unit").addEventListener("change", e => {
-  const k = TO_MM[S.mix.unit] / TO_MM[e.target.value];
-  S.mix.items.forEach(it => ["L", "W", "H"].forEach(f => { if (it[f] !== "") it[f] = +(it[f] * k).toFixed(2); }));
-  S.mix.unit = e.target.value; save(); renderMixInputs(); renderMix();
 });
 $("m-fill").addEventListener("change", e => { S.mix.fill = e.target.checked; save(); renderMix(); });
 $("m-target").addEventListener("change", e => { S.mix.target = e.target.value; selPlan = 0; selTruck = 0; save(); renderMix(); });
@@ -1038,7 +1234,7 @@ setTimeout(() => document.querySelectorAll(".view3d .fallback").forEach(f =>
 
 renderMixInputs();
 const hashMode = location.hash.slice(1);
-setMode(["single", "mix", "settings"].includes(hashMode) ? hashMode : S.mode);
+setMode(MODES.includes(hashMode) ? hashMode : MODES.includes(S.mode) ? S.mode : "single");
 </script>
 
 <script type="importmap">
