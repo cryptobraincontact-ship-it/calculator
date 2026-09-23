@@ -220,11 +220,16 @@
       </div>
       <div id="m-items" style="margin-top:10px"></div>
       <button class="btn ghost" id="m-add">+ Add box type</button>
+      <label class="check"><input type="checkbox" id="m-fill"> Fill empty spaces with other box types (on top of stacks and in side gaps)</label>
       <p class="note">Box types are loaded in list order, first type nearest the cabin.</p>
     </div>
     <div class="card">
-      <h2>Available Vehicles</h2>
-      <div class="chips" id="m-vehicles"></div>
+      <h2>Vehicle</h2>
+      <select id="m-target" aria-label="Vehicle"></select>
+      <div id="m-autoveh">
+        <label style="margin-top:10px">Allowed vehicles</label>
+        <div class="chips" id="m-vehicles"></div>
+      </div>
     </div>
   </section>
 
@@ -301,7 +306,7 @@ const DEFAULT_STATE = {
   gaps: { top: 10, door: 0, side: 0 },
   single: { veh: "20", unit: "cm", L: 60, W: 40, H: 30, wt: "", maxL: "", rot: true, up: true },
   mix: {
-    unit: "cm", off: {},
+    unit: "cm", off: {}, fill: true, target: "auto",
     items: [
       { name: "Box A", L: 60, W: 40, H: 30, qty: 300, wt: "", maxL: "", up: true, rot: true },
       { name: "Box B", L: 50, W: 30, H: 25, qty: 200, wt: "", maxL: "", up: true, rot: true }
@@ -428,12 +433,13 @@ function standOptions(box, U) {
   return out;
 }
 // Floor spots of a pack, in loading order: cabin to door, each cross-row built layer by layer.
-function placementsFrom(pack, opt, x0, limit, color, colorB) {
-  const floor = [];
+function placementsFrom(pack, opt, x0, limit, color, colorB, y0 = 0, z0 = 0, spotOk = null) {
+  let floor = [];
   for (const bl of pack.blocks)
     for (let i = 0; i < bl.cx; i++)
       for (let j = 0; j < bl.cy; j++)
-        floor.push({ x: x0 + bl.x + i * bl.pa, y: bl.y + j * bl.pb, l: bl.pa, w: bl.pb, o: bl.o });
+        floor.push({ x: x0 + bl.x + i * bl.pa, y: y0 + bl.y + j * bl.pb, l: bl.pa, w: bl.pb, o: bl.o });
+  if (spotOk) floor = floor.filter(spotOk);
   floor.sort((p, q) => p.x - q.x || p.y - q.y);
   const out = [];
   let i = 0;
@@ -441,10 +447,20 @@ function placementsFrom(pack, opt, x0, limit, color, colorB) {
     let j = i; while (j < floor.length && floor[j].x === floor[i].x) j++;
     for (let z = 0; z < opt.layers && out.length < limit; z++)
       for (let k = i; k < j && out.length < limit; k++)
-        out.push({ ...floor[k], z: z * opt.h, h: opt.h, color: floor[k].o ? colorB : color });
+        out.push({ ...floor[k], z: z0 + z * opt.h, h: opt.h, color: floor[k].o ? colorB : color });
     i = j;
   }
   return out;
+}
+// True when a footprint rests fully on the given spots (each spot is a box top at the same height).
+function isSupported(p, spots) {
+  let area = 0;
+  for (const s of spots) {
+    const ox = Math.min(p.x + p.l, s.x + s.l) - Math.max(p.x, s.x);
+    const oy = Math.min(p.y + p.w, s.y + s.w) - Math.max(p.y, s.y);
+    if (ox > 0 && oy > 0) area += ox * oy;
+  }
+  return area >= p.l * p.w - 1;
 }
 function shade(hex, amt) {
   const n = parseInt(hex.slice(1), 16);
@@ -612,9 +628,49 @@ function packTrucks(v, types, qtys) {
       x0 += sec.len; R -= sec.len; wt += n * t.wt; rem[t.i] -= n;
     }
     if (!sections.length) return { error: "could not be loaded" };
-    trucks.push({ v, tr, sections, wt, count: sections.reduce((s, x) => s + x.n, 0) });
+    sections.forEach(s => s.list = placementsFrom(s.pack, s.opt, s.x0, s.n, s.t.color, shade(s.t.color, -0.12)));
+    const fills = S.mix.fill ? fillSpaces(v, tr, sections, types, rem, wt) : [];
+    fills.forEach(f => { rem[f.t.i] -= f.n; wt += f.n * f.t.wt; });
+    const byType = {};
+    [...sections, ...fills].forEach(x => byType[x.t.i] = (byType[x.t.i] || 0) + x.n);
+    trucks.push({ v, tr, sections, fills, wt, byType, count: Object.values(byType).reduce((a, b) => a + b, 0) });
   }
   return { trucks };
+}
+// Empty spaces left by a section: above its complete stacks, and the strip beside it along the side wall.
+function sectionSpaces(sec, U) {
+  const out = [];
+  const usedW = Math.max(...sec.pack.blocks.map(b => b.y + b.cy * b.pb));
+  if (U.W - usedW > 0) out.push({ kind: "side", sec, x: sec.x0, y: usedW, z: 0, L: sec.len, W: U.W - usedW, H: U.H });
+  const topZ = sec.opt.layers * sec.opt.h;
+  const stack = new Map();
+  sec.list.forEach(p => { const k = p.x + "|" + p.y; stack.set(k, (stack.get(k) || 0) + 1); });
+  const support = sec.list.filter(p => p.z === 0 && stack.get(p.x + "|" + p.y) === sec.opt.layers);
+  if (U.H - topZ > 0 && support.length) out.push({ kind: "top", sec, x: sec.x0, y: 0, z: topZ, L: sec.len, W: usedW, H: U.H - topZ, support });
+  return out;
+}
+// Fill each empty space with whichever remaining box type uses the most volume there.
+function fillSpaces(v, tr, sections, types, rem, wt) {
+  const fills = [], left = { ...rem };
+  for (const sec of sections) for (const sp of sectionSpaces(sec, tr.U)) {
+    let best = null;
+    for (const t of types) {
+      if (left[t.i] <= 0) continue;
+      const wLeft = +v.kg > 0 && t.wt > 0 ? Math.floor((+v.kg - wt) / t.wt) : Infinity;
+      if (wLeft <= 0) continue;
+      for (const o of standOptions(t, { H: sp.H })) {
+        const pack = pack2D(sp.L, sp.W, o.f1, o.f2, t.rot);
+        if (!pack.count) continue;
+        const ok = sp.kind === "top" ? p => isSupported(p, sp.support) : null;
+        const n0 = Math.min(left[t.i], wLeft);
+        const list = placementsFrom(pack, o, sp.x, n0, t.color, shade(t.color, -0.12), sp.y, sp.z, ok);
+        const vol = list.length * t.L * t.W * t.H;
+        if (list.length && (!best || vol > best.vol)) best = { t, opt: o, pack, sp, list, n: list.length, vol };
+      }
+    }
+    if (best) { fills.push(best); left[best.t.i] -= best.n; wt += best.n * best.t.wt; }
+  }
+  return fills;
 }
 function planCost(trucks) {
   const allRates = trucks.every(t => hasRate(t.v));
@@ -629,7 +685,8 @@ let mixPlans = [], selPlan = 0, selTruck = 0;
 function computePlans() {
   const types = mixTypes();
   const qtys = {}; types.forEach(t => qtys[t.i] = t.qty);
-  const vehs = S.vehicles.filter(v => !S.mix.off[v.id]);
+  const target = S.vehicles.find(v => v.id === S.mix.target);
+  const vehs = target ? [target] : S.vehicles.filter(v => !S.mix.off[v.id]);
   const plans = [], failures = [];
   const singles = {};
   for (const v of vehs) {
@@ -643,8 +700,7 @@ function computePlans() {
     const tr = singles[v.id];
     if (!tr || tr.length < 2) continue;
     const last = tr[tr.length - 1], lastQ = {};
-    types.forEach(t => lastQ[t.i] = 0);
-    last.sections.forEach(s => lastQ[s.t.i] += s.n);
+    types.forEach(t => lastQ[t.i] = last.byType[t.i] || 0);
     for (const s of vehs) {
       if (s.id === v.id) continue;
       const cheaper = hasRate(s) && hasRate(v) ? +s.rate < +v.rate : vehVolume(s) < vehVolume(v);
@@ -658,13 +714,14 @@ function computePlans() {
     .filter(p => !seen.has(p.name) && seen.add(p.name));
   const allCost = out.length && out.every(p => p.cost !== null);
   out.sort((a, b) => allCost ? a.cost - b.cost || a.trucks.length - b.trucks.length : a.trucks.length - b.trucks.length || a.vol - b.vol);
-  return { plans: out, failures, types, allCost };
+  const fitsOne = S.vehicles.filter(v => singles[v.id] && singles[v.id].length === 1).map(v => v.name);
+  return { plans: out, failures, types, allCost, target, fitsOne };
 }
 let mixTimer;
 function scheduleMix() { clearTimeout(mixTimer); mixTimer = setTimeout(renderMix, 150); }
 function renderMix() {
   renderMixInputs(false);
-  const { plans, failures, types, allCost } = computePlans();
+  const { plans, failures, types, allCost, target, fitsOne } = computePlans();
   mixPlans = plans;
   if (selPlan >= plans.length) selPlan = 0;
   const totalBoxes = types.reduce((s, t) => s + t.qty, 0);
@@ -682,7 +739,18 @@ function renderMix() {
     ${totalWt > 0 ? `<div class="stat"><div class="v">${fmt(totalWt)} kg</div><div class="k">Total weight</div></div>` : ""}
     ${best && best.cost !== null ? `<div class="stat"><div class="v">₹${fmt(best.cost)}</div><div class="k">Total freight</div></div>` : ""}`;
   const m = [];
-  if (best) m.push(`<div class="msg ok">Recommended: <b>${esc(best.name)}</b>${best.cost !== null ? ` — ₹${fmt(best.cost)}` : ""}.${allCost ? "" : " Freight rates not set; ranked by fewest and smallest vehicles."}</div>`);
+  const contents = t => types.filter(x => t.byType[x.i]).map(x => `${esc(x.name)} ${fmt(t.byType[x.i])}`).join(", ");
+  if (target && best) {
+    if (best.trucks.length === 1) m.push(`<div class="msg ok">All ${fmt(totalBoxes)} boxes fit in one ${esc(target.name)} vehicle.</div>`);
+    else {
+      const first = best.trucks[0];
+      const over = types.map(x => ({ x, n: x.qty - (first.byType[x.i] || 0) })).filter(o => o.n > 0);
+      m.push(`<div class="msg">Does not fit in one ${esc(target.name)}. One vehicle carries: ${contents(first)}. Remaining: <b>${over.map(o => `${esc(o.x.name)} ${fmt(o.n)}`).join(", ")}</b> — ${best.trucks.length} × ${esc(target.name)} required.</div>`);
+    }
+  } else if (best) {
+    m.push(`<div class="msg ok">Recommended: <b>${esc(best.name)}</b>${best.cost !== null ? ` — ₹${fmt(best.cost)}` : ""}.${allCost ? "" : " Freight rates not set; ranked by fewest and smallest vehicles."}</div>`);
+    m.push(`<div class="msg ${fitsOne.length ? "ok" : ""}">${fitsOne.length ? `Fits in a single vehicle: <b>${fitsOne.map(esc).join(", ")}</b>.` : "Does not fit in any single vehicle."}</div>`);
+  }
   if (failures.length) m.push(`<div class="msg">Not feasible — ${failures.map(esc).join("; ")}.</div>`);
   if (!plans.length) m.push(`<div class="msg">No feasible plan. Check box and vehicle dimensions.</div>`);
   $("m-msgs").innerHTML = m.join("");
@@ -696,7 +764,7 @@ function renderMix() {
   renderTruck();
 }
 function truckFill(t) {
-  const bv = t.sections.reduce((s, x) => s + x.n * x.t.L * x.t.W * x.t.H, 0);
+  const bv = [...t.sections, ...t.fills].reduce((s, x) => s + x.n * x.t.L * x.t.W * x.t.H, 0);
   return bv / (t.tr.T.L * t.tr.T.W * t.tr.T.H) * 100;
 }
 function renderTruck() {
@@ -705,7 +773,9 @@ function renderTruck() {
   if (selTruck >= p.trucks.length) selTruck = 0;
   $("m-trucks").innerHTML = p.trucks.map((t, i) => `<button data-truck="${i}" class="${i === selTruck ? "active" : ""}">Truck ${i + 1} <small>${esc(t.v.name)} · ${fmt(t.count)} boxes</small></button>`).join("");
   const t = p.trucks[selTruck], conv = convFor(S.mix.unit);
-  $("m-truckinfo").innerHTML = `<b>Truck ${selTruck + 1} (${esc(t.v.name)})</b> — ${fmt(t.count)} boxes · ${fmt(truckFill(t), 1)}% space used${t.wt > 0 ? ` · ${fmt(t.wt)} / ${fmt(t.v.kg)} kg` : ""} · Free length at door: ${cm(t.tr.T.L - t.sections.reduce((s, x) => Math.max(s, x.x0 + x.len), 0))}`;
+  const allTypes = mixTypes();
+  $("m-truckinfo").innerHTML = `<b>Truck ${selTruck + 1} (${esc(t.v.name)})</b> — ${allTypes.filter(x => t.byType[x.i]).map(x => `<span class="sw" style="background:${x.color}"></span>${esc(x.name)}: <b>${fmt(t.byType[x.i])}</b>`).join(" · ")}
+    <br>${fmt(t.count)} boxes · ${fmt(truckFill(t), 1)}% space used${t.wt > 0 ? ` · ${fmt(t.wt)} / ${fmt(t.v.kg)} kg` : ""} · Free length at door: ${cm(t.tr.T.L - t.sections.reduce((s, x) => Math.max(s, x.x0 + x.len), 0))}`;
 
   const steps = [`Load section by section, starting at the front wall (cabin side).`];
   let list = [];
@@ -716,17 +786,36 @@ function renderTruck() {
     steps.push(`<span class="sw" style="background:${s.t.color}"></span><b>Section ${k + 1}: ${esc(s.t.name)} — ${fmt(s.n)} boxes</b> (from front ${cm(s.x0)}–${cm(s.x0 + s.len)})
       ${s.opt.up !== 2 ? `<br>Boxes on side — ${SIDE_NAME[s.opt.up]} (${conv(s.opt.h)}) vertical.` : ""}
       <ul>${sub}<li>Stack up to ${s.opt.layers} layers${s.n < cap ? ` (last row: ${fmt(cap - s.n)} positions empty)` : ""}</li></ul>`);
-    list = list.concat(placementsFrom(s.pack, s.opt, s.x0, s.n, s.t.color, shade(s.t.color, -0.12)));
+    list = list.concat(s.list);
     labels.push({ x: s.x0, y: 0, w: s.len, d: Math.max(...s.pack.blocks.map(bl => bl.y + bl.cy * bl.pb)), text: `${k + 1}: ${s.t.name}`, section: true });
+  });
+  t.fills.forEach(f => {
+    const secNo = t.sections.indexOf(f.sp.sec) + 1;
+    const xs = f.list.map(p => p.x), ys = f.list.map(p => p.y);
+    const x1 = Math.min(...xs), x2 = Math.max(...f.list.map(p => p.x + p.l));
+    const where = f.sp.kind === "top"
+      ? `on top of Section ${secNo}, from front ${cm(x1)}–${cm(x2)}, starting at height ${cm(f.sp.z)}`
+      : `in the side gap of Section ${secNo}, from front ${cm(x1)}–${cm(x2)}, from side ${cm(Math.min(...ys))}`;
+    const layers = Math.max(...f.list.map(p => Math.round((p.z - f.sp.z) / f.opt.h))) + 1;
+    steps.push(`<span class="sw" style="background:${f.t.color}"></span><b>Fill: ${esc(f.t.name)} — ${fmt(f.n)} boxes</b> ${where}.
+      ${f.opt.up !== 2 ? `<br>Boxes on side — ${SIDE_NAME[f.opt.up]} (${conv(f.opt.h)}) vertical.` : ""}
+      <ul>${f.pack.blocks.map(bl => `<li>${f.pack.blocks.length > 1 ? `From front ${cm(f.sp.x + bl.x)}–${cm(f.sp.x + bl.x + bl.cx * bl.pa)}, from side ${cm(f.sp.y + bl.y)}–${cm(f.sp.y + bl.y + bl.cy * bl.pb)}: ` : ""}${blockText(bl, conv)} per layer</li>`).join("")}<li>${layers} layer${layers > 1 ? "s" : ""}</li></ul>`);
+    list = list.concat(f.list);
   });
   steps.push(`Maintain a minimum ${cm(t.tr.gaps.top)} air gap at the top. Secure open spaces with dunnage or airbags.`);
   $("m-steps").innerHTML = steps.map(s => `<li>${s}</li>`).join("");
-  const types = [...new Map(t.sections.map(s => [s.t.i, s.t])).values()];
+  const types = [...new Map([...t.sections, ...t.fills].map(s => [s.t.i, s.t])).values()];
   viewers.mix.show({ T: t.tr.T, gaps: t.tr.gaps, list, labels, legend: types.map(x => ({ c: x.color, t: x.name })), caption: `Truck ${selTruck + 1}: ${fmt(t.count)} boxes` });
 }
 
 function renderMixInputs(full = true) {
   $("m-unit").value = S.mix.unit;
+  $("m-fill").checked = S.mix.fill;
+  if (S.mix.target !== "auto" && !S.vehicles.some(v => v.id === S.mix.target)) S.mix.target = "auto";
+  $("m-target").innerHTML = `<option value="auto">Auto — recommend best plan</option>` +
+    S.vehicles.map(v => `<option value="${esc(v.id)}">${esc(v.name)} — check this vehicle</option>`).join("");
+  $("m-target").value = S.mix.target;
+  $("m-autoveh").classList.toggle("hidden", S.mix.target !== "auto");
   $("m-vehicles").innerHTML = S.vehicles.map(v => `<button data-id="${esc(v.id)}" class="${S.mix.off[v.id] ? "" : "active"}">${esc(v.name)}</button>`).join("");
   if (!full) return;
   $("m-items").innerHTML = S.mix.items.map((it, i) => `
@@ -816,7 +905,10 @@ function drawTop(svg, d, W = 1000) {
   g += `<rect x="${pad}" y="${pad}" width="${T.L * s}" height="${T.W * s}" fill="none" stroke="${css("--truck")}" stroke-width="2"/>`;
   g += `<text x="${pad}" y="${pad - fs * .7}" font-size="${fs}" fill="${css("--muted")}">◀ CABIN</text>`;
   g += `<text x="${pad + T.L * s}" y="${pad - fs * .7}" font-size="${fs}" text-anchor="end" fill="${css("--muted")}">DOOR ▶</text>`;
-  for (const p of d.list) if (p.z === 0)
+  // Topmost box at each spot is what you see from above.
+  const topmost = new Map();
+  for (const p of d.list) { const k = p.x + "|" + p.y + "|" + p.l; const q = topmost.get(k); if (!q || p.z > q.z) topmost.set(k, p); }
+  for (const p of [...topmost.values()].sort((a, b) => a.z - b.z))
     g += `<rect x="${pad + p.x * s}" y="${pad + (off + p.y) * s}" width="${p.l * s}" height="${p.w * s}" fill="${p.color}" fill-opacity=".85" stroke="${css("--card")}" stroke-width="1"/>`;
   for (const l of d.labels) {
     if (l.section && l.x > 0) g += `<line x1="${pad + l.x * s}" x2="${pad + l.x * s}" y1="${pad}" y2="${pad + T.W * s}" stroke="${css("--text")}" stroke-width="2" stroke-dasharray="6 4"/>`;
@@ -900,6 +992,8 @@ $("m-unit").addEventListener("change", e => {
   S.mix.items.forEach(it => ["L", "W", "H"].forEach(f => { if (it[f] !== "") it[f] = +(it[f] * k).toFixed(2); }));
   S.mix.unit = e.target.value; save(); renderMixInputs(); renderMix();
 });
+$("m-fill").addEventListener("change", e => { S.mix.fill = e.target.checked; save(); renderMix(); });
+$("m-target").addEventListener("change", e => { S.mix.target = e.target.value; selPlan = 0; selTruck = 0; save(); renderMix(); });
 $("m-vehicles").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; S.mix.off[b.dataset.id] = !S.mix.off[b.dataset.id]; save(); renderMix(); });
 $("m-plans").addEventListener("click", e => { const r = e.target.closest("tr[data-plan]"); if (!r) return; selPlan = +r.dataset.plan; selTruck = 0; renderMix(); });
 $("m-trucks").addEventListener("click", e => { const b = e.target.closest("button[data-truck]"); if (!b) return; selTruck = +b.dataset.truck; renderTruck(); });
