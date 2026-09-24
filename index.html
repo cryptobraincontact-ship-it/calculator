@@ -363,6 +363,10 @@ const DEFAULT_VEHICLES = [
 const PALETTE = ["#3b82c4", "#e08a2e", "#3aa76d", "#c2527a", "#8a6fd1", "#c9a227", "#2bb3b3", "#d0603a"];
 const TO_MM = { mm: 1, cm: 10, in: 25.4, ft: 304.8 };
 const UNIT_NAME = { mm: "mm", cm: "cm", in: "in", ft: "ft" };
+// Nearest mm, so exact fits survive conversion (3 × 16 in = 48 in); rounding up would break them.
+const toMM = (v, unit) => Math.round((+v || 0) * TO_MM[unit]);
+// Container slack for residual rounding (4 × 12 in = 4 × 305 mm = 1220 mm vs a 1219 mm 48 in deck).
+const FIT_TOL = 3;
 const STORE_KEY = "reefer-calc.v2";
 const $ = id => document.getElementById(id);
 const fmt = (n, d = 0) => Number(n).toLocaleString("en-IN", { maximumFractionDigits: d });
@@ -403,7 +407,7 @@ function save() {
 function truckOf(v) {
   const T = { L: v.L * 304.8, W: v.W * 304.8, H: v.H * 304.8 };
   const g = { top: (+S.gaps.top || 0) * 10, door: (+S.gaps.door || 0) * 10, side: (+S.gaps.side || 0) * 10 };
-  const U = { L: Math.floor(T.L - g.door), W: Math.floor(T.W - 2 * g.side), H: Math.floor(T.H - g.top) };
+  const U = { L: Math.floor(T.L - g.door) + FIT_TOL, W: Math.floor(T.W - 2 * g.side) + FIT_TOL, H: Math.floor(T.H - g.top) + FIT_TOL };
   return { T, U, gaps: g, valid: T.L > 0 && T.W > 0 && T.H > 0 && U.L > 0 && U.W > 0 && U.H > 0 };
 }
 const vehVolume = v => v.L * v.W * v.H;
@@ -414,6 +418,12 @@ const hasRate = v => +v.rate > 0;
 // ============================================================
 function rasterPoints(D, a, b, useB) {
   const s = new Set([0]);
+  // Tiny boxes would give millions of a/b combinations; plain multiples are plenty at that scale.
+  if (useB && (D / a + 1) * (D / b + 1) > 2e5) {
+    for (let i = 0; i * a <= D; i++) s.add(i * a);
+    for (let j = 0; j * b <= D; j++) s.add(j * b);
+    return [...s].sort((x, y) => x - y);
+  }
   for (let i = 0; i * a <= D; i++) {
     if (!useB) { s.add(i * a); continue; }
     for (let j = 0; i * a + j * b <= D; j++) s.add(i * a + j * b);
@@ -503,8 +513,12 @@ function standOptions(box, U) {
   }
   return out;
 }
+// Cap on boxes drawn/placed individually; counts above this are still calculated, just not drawn.
+const MAX_DRAW = 20000;
 // Floor spots of a pack, in loading order: cabin to door, each cross-row built layer by layer.
 function placementsFrom(pack, opt, x0, limit, color, colorB, y0 = 0, z0 = 0, spotOk = null) {
+  limit = Math.min(limit, MAX_DRAW);
+  if (pack.count > MAX_DRAW * 4) return []; // too many floor spots to enumerate
   let floor = [];
   for (const bl of pack.blocks)
     for (let i = 0; i < bl.cx; i++)
@@ -544,7 +558,7 @@ function shade(hex, amt) {
 // ============================================================
 function singleBox() {
   const s = S.single, u = TO_MM[s.unit];
-  return { L: Math.ceil(+s.L * u), W: Math.ceil(+s.W * u), H: Math.ceil(+s.H * u), up: s.up, rot: s.rot, maxL: parseInt(s.maxL) || 0, wt: +s.wt || 0 };
+  return { L: toMM(s.L, s.unit), W: toMM(s.W, s.unit), H: toMM(s.H, s.unit), up: s.up, rot: s.rot, maxL: parseInt(s.maxL) || 0, wt: +s.wt || 0 };
 }
 function calcSingle(v, box) {
   const tr = truckOf(v);
@@ -562,6 +576,7 @@ function calcSingle(v, box) {
   res.best = best;
   res.weightLimit = box.wt > 0 && +v.kg > 0 ? Math.floor(+v.kg / box.wt) : Infinity;
   res.final = Math.min(best.total, res.weightLimit);
+  if (res.final === 0) { res.error = `Weight per unit (${fmt(box.wt)} kg) exceeds the payload of ${v.name} (${fmt(v.kg)} kg).`; return res; }
   res.ok = true;
   return res;
 }
@@ -599,7 +614,7 @@ function renderSingle() {
     if (res.final < b.total) m.push(`<div class="msg">Space allows ${fmt(b.total)} boxes; payload limit (${fmt(v.kg)} kg) caps the load at <b>${fmt(res.final)}</b>.</div>`);
     if (b.up !== 2) m.push(`<div class="msg">Best fit requires boxes on their side (${SIDE_NAME[b.up]} vertical). Enable "This side up" if not permitted.</div>`);
     const usedL = Math.max(...b.pack.blocks.map(bl => bl.x + bl.cx * bl.pa)), usedW = Math.max(...b.pack.blocks.map(bl => bl.y + bl.cy * bl.pb));
-    m.push(`<div class="msg ok">Unused space — length: ${cm(res.T.L - usedL)}, width: ${cm(res.T.W - usedW)}, height: ${cm(res.T.H - b.layers * b.h)}.</div>`);
+    m.push(`<div class="msg ok">Unused space — length: ${cm(Math.max(0, res.T.L - usedL))}, width: ${cm(Math.max(0, res.T.W - usedW))}, height: ${cm(Math.max(0, res.T.H - b.layers * b.h))}.</div>`);
     $("s-msgs").innerHTML = m.join("");
 
     const steps = [`Start at the front wall (cabin side). ${res.gaps.side > 0 ? `Leave ${cm(res.gaps.side)} on each side.` : "Keep boxes flush against one side wall."}`];
@@ -654,23 +669,31 @@ function renderSingle() {
 // Pallet footprint and loaded height for vehicle v; builds the pallet from boxes when box size is given.
 function palletSpec(v) {
   const p = S.pallet, u = TO_MM[p.unit], tr = truckOf(v);
-  const spec = { L: Math.ceil(+p.L * u), W: Math.ceil(+p.W * u), base: Math.ceil((+p.base || 0) * u), H: Math.ceil(+p.H * u), boxes: 0, auto: false };
-  const b = { L: Math.ceil(+p.bL * u), W: Math.ceil(+p.bW * u), H: Math.ceil(+p.bH * u) };
+  const spec = { L: toMM(p.L, p.unit), W: toMM(p.W, p.unit), base: toMM(p.base || 0, p.unit), H: toMM(p.H, p.unit), boxes: 0, auto: false };
+  const b = { L: toMM(p.bL, p.unit), W: toMM(p.bW, p.unit), H: toMM(p.bH, p.unit) };
   if (b.L > 0 && b.W > 0 && b.H > 0) {
     const levels = p.stack ? Math.max(1, parseInt(p.maxS) || 1) : 1;
     const maxLoad = +p.maxLoad > 0 ? +p.maxLoad * u : (tr.valid ? Math.floor(tr.U.H / levels) - spec.base : 0);
-    const pack = pack2D(spec.L, spec.W, b.L, b.W, true);
-    const layers = Math.max(0, Math.floor(maxLoad / b.H));
+    const pack = pack2D(spec.L + FIT_TOL, spec.W + FIT_TOL, b.L, b.W, true);
+    const layers = Math.max(0, Math.floor((maxLoad + FIT_TOL) / b.H));
     Object.assign(spec, { auto: true, box: b, boxPack: pack, boxLayers: layers, boxes: pack.count * layers, H: spec.base + layers * b.H });
   }
   return spec;
 }
 function calcPallet(v) {
-  const p = S.pallet, spec = palletSpec(v);
+  const p = S.pallet, spec = palletSpec(v), conv = convFor(p.unit);
   if (!(spec.L > 0 && spec.W > 0 && spec.H > 0)) return { v, ok: false, spec, error: "Enter pallet dimensions." };
-  if (spec.auto && spec.boxes === 0) return { v, ok: false, spec, error: "Boxes do not fit on this pallet within the load height." };
+  if (spec.auto && spec.boxPack.count === 0)
+    return { v, ok: false, spec, error: `Box (${conv(spec.box.L)} × ${conv(spec.box.W)}) is larger than the pallet deck (${conv(spec.L)} × ${conv(spec.W)}).` };
+  if (spec.auto && spec.boxLayers === 0)
+    return { v, ok: false, spec, error: +p.maxLoad > 0 ? `Max load height (${conv(+p.maxLoad * TO_MM[p.unit])}) is lower than the box height (${conv(spec.box.H)}).` : `Box height (${conv(spec.box.H)}) exceeds the usable height of ${v.name}.` };
   const r = calcSingle(v, { L: spec.L, W: spec.W, H: spec.H, up: true, rot: p.rot, maxL: p.stack ? Math.max(1, parseInt(p.maxS) || 1) : 1, wt: +p.wt || 0 });
-  if (!r.ok) r.error = r.error.replace("Box does not fit", "Pallet does not fit").replace("Enter all box dimensions", "Enter pallet dimensions");
+  if (!r.ok && r.error.startsWith("Box does not fit")) {
+    const tr = truckOf(v);
+    if (tr.valid && spec.H > tr.U.H) r.error = `Loaded pallet height (${conv(spec.H)}) exceeds the usable height of ${v.name} (${conv(tr.U.H)}, after the top air gap).`;
+    else if (tr.valid) r.error = `Pallet (${conv(spec.L)} × ${conv(spec.W)}) does not fit on the floor of ${v.name}.`;
+  }
+  if (!r.ok) r.error = r.error.replace("Enter all box dimensions", "Enter pallet dimensions");
   r.spec = spec;
   return r;
 }
@@ -684,7 +707,7 @@ function renderPallet() {
   $("p-vehinfo").innerHTML = `Internal: ${v.L} × ${v.W} × ${v.H} ft · Payload ${fmt(+v.kg || 0)} kg${hasRate(v) ? ` · ₹${fmt(v.rate)}/trip` : ""} · <a href="#" data-goto="settings">Edit</a>`;
   const res = calcPallet(v), spec = res.spec, conv = convFor(p.unit);
   $("p-H").disabled = spec.auto;
-  $("p-hnote").textContent = spec.auto ? `Loaded height calculated from boxes: ${conv(spec.H)} (base ${conv(spec.base)} + ${spec.boxLayers} × ${conv(spec.box.H)}).` : "";
+  $("p-hnote").textContent = spec.auto && spec.boxes > 0 ? `${fmt(spec.boxes)} boxes per pallet. Loaded height calculated from boxes: ${conv(spec.H)} (base ${conv(spec.base)} + ${spec.boxLayers} × ${conv(spec.box.H)}).` : "";
   $("p-printtitle").textContent = `Pallet Load Plan — ${v.name} vehicle, pallet ${p.L} × ${p.W} ${UNIT_NAME[p.unit]}`;
 
   if (!res.ok) {
@@ -706,7 +729,7 @@ function renderPallet() {
     if (res.final < b.total) m.push(`<div class="msg">Space allows ${fmt(b.total)} pallets; payload limit (${fmt(v.kg)} kg) caps the load at <b>${fmt(res.final)}</b>.</div>`);
     if (p.stack && b.layers < (parseInt(p.maxS) || 1)) m.push(`<div class="msg">Vehicle height allows only ${b.layers} stack level${b.layers > 1 ? "s" : ""}.</div>`);
     const usedL = Math.max(...b.pack.blocks.map(bl => bl.x + bl.cx * bl.pa)), usedW = Math.max(...b.pack.blocks.map(bl => bl.y + bl.cy * bl.pb));
-    m.push(`<div class="msg ok">Unused space — length: ${cm(res.T.L - usedL)}, width: ${cm(res.T.W - usedW)}, height: ${cm(res.T.H - b.layers * b.h)}.</div>`);
+    m.push(`<div class="msg ok">Unused space — length: ${cm(Math.max(0, res.T.L - usedL))}, width: ${cm(Math.max(0, res.T.W - usedW))}, height: ${cm(Math.max(0, res.T.H - b.layers * b.h))}.</div>`);
     $("p-msgs").innerHTML = m.join("");
 
     const palletText = bl => `<b>${conv(bl.pa)}</b> side along truck length, <b>${conv(bl.pb)}</b> across — <b>${bl.cx}</b> × <b>${bl.cy}</b> = <b>${bl.count}</b> pallet${bl.count === 1 ? "" : "s"}`;
@@ -729,14 +752,14 @@ function renderPallet() {
   const rows = S.vehicles.map(x => ({ x, r: calcPallet(x) }));
   const costs = rows.filter(o => o.r.ok && hasRate(o.x)).map(o => o.x.rate / o.r.final);
   const minCost = costs.length ? Math.min(...costs) : null;
-  $("p-allveh").innerHTML = `<tr><th>Vehicle</th><th class="num">Floor</th><th class="num">Levels</th><th class="num">Pallets</th>${spec.auto ? '<th class="num">Boxes</th>' : ""}<th class="num">₹ / pallet</th></tr>` +
+  $("p-allveh").innerHTML = `<tr><th>Vehicle</th><th class="num">Floor</th><th class="num">Levels</th><th class="num">Pallets</th>${spec.auto ? '<th class="num">Boxes/pallet</th><th class="num">Total boxes</th>' : ""}<th class="num">₹ / pallet</th></tr>` +
     rows.map(({ x, r }) => {
       const cost = r.ok && hasRate(x) ? x.rate / r.final : null, cheapest = cost !== null && cost === minCost;
       return `<tr class="click ${x.id === v.id ? "sel" : ""} ${cheapest ? "best" : ""}" data-veh="${esc(x.id)}">
         <td>${esc(x.name)}${cheapest ? '<span class="badge">Lowest cost</span>' : ""}</td>
         <td class="num">${r.ok ? fmt(r.best.perLayer) : "—"}</td><td class="num">${r.ok ? r.best.layers : "—"}</td>
         <td class="num">${r.ok ? fmt(r.final) + (r.final < r.best.total ? " (payload)" : "") : "Does not fit"}</td>
-        ${spec.auto ? `<td class="num">${r.ok ? fmt(r.final * r.spec.boxes) : "—"}</td>` : ""}
+        ${spec.auto ? `<td class="num">${r.ok ? fmt(r.spec.boxes) : "—"}</td><td class="num">${r.ok ? fmt(r.final * r.spec.boxes) : "—"}</td>` : ""}
         <td class="num">${cost !== null ? "₹" + fmt(cost, 0) : "—"}</td></tr>`;
     }).join("");
 }
@@ -747,7 +770,7 @@ function renderPallet() {
 function mixTypes() {
   return S.mix.items.map((it, i) => ({
     i, name: it.name || `Box ${i + 1}`, color: PALETTE[i % PALETTE.length], unit: it.unit || S.mix.unit,
-    L: Math.ceil(+it.L * TO_MM[it.unit || S.mix.unit]), W: Math.ceil(+it.W * TO_MM[it.unit || S.mix.unit]), H: Math.ceil(+it.H * TO_MM[it.unit || S.mix.unit]),
+    L: toMM(it.L, it.unit || S.mix.unit), W: toMM(it.W, it.unit || S.mix.unit), H: toMM(it.H, it.unit || S.mix.unit),
     qty: Math.max(0, Math.floor(+it.qty || 0)), wt: +it.wt || 0, maxL: parseInt(it.maxL) || 0, up: !!it.up, rot: !!it.rot
   })).filter(t => t.L > 0 && t.W > 0 && t.H > 0 && t.qty > 0);
 }
@@ -810,7 +833,9 @@ function sectionSpaces(sec, U) {
   const stack = new Map();
   sec.list.forEach(p => { const k = p.x + "|" + p.y; stack.set(k, (stack.get(k) || 0) + 1); });
   const support = sec.list.filter(p => p.z === 0 && stack.get(p.x + "|" + p.y) === sec.opt.layers);
-  if (U.H - topZ > 0 && support.length) out.push({ kind: "top", sec, x: sec.x0, y: 0, z: topZ, L: sec.len, W: usedW, H: U.H - topZ, support });
+  // A Max layers limit means "nothing more on top" — only fill above stacks that stopped because of height.
+  const capped = sec.t.maxL > 0 && sec.opt.layers >= sec.t.maxL;
+  if (!capped && U.H - topZ > 0 && support.length) out.push({ kind: "top", sec, x: sec.x0, y: 0, z: topZ, L: sec.len, W: usedW, H: U.H - topZ, support });
   return out;
 }
 // Fill each empty space with whichever remaining box type uses the most volume there.
@@ -873,19 +898,20 @@ function computePlans() {
       if (!r.error && r.trucks.length === 1) plans.push({ trucks: [...tr.slice(0, -1), r.trucks[0]] });
     }
   }
-  const seen = new Set();
+  const seen = new Set(), key = p => p.trucks.map(t => t.v.id).sort().join("|");
   const out = plans.map(p => ({ ...p, ...planCost(p.trucks), name: planName(p.trucks) }))
-    .filter(p => !seen.has(p.name) && seen.add(p.name));
+    .filter(p => !seen.has(key(p)) && seen.add(key(p)));
   const allCost = out.length && out.every(p => p.cost !== null);
   out.sort((a, b) => allCost ? a.cost - b.cost || a.trucks.length - b.trucks.length : a.trucks.length - b.trucks.length || a.vol - b.vol);
   const fitsOne = S.vehicles.filter(v => singles[v.id] && singles[v.id].length === 1).sort((a, b) => vehVolume(a) - vehVolume(b)).map(v => v.name);
-  return { plans: out, failures, types, allCost, target, fitsOne };
+  const skipped = S.mix.items.filter((it, i) => !types.some(t => t.i === i)).map((it, i) => it.name || "Unnamed box");
+  return { plans: out, failures, types, allCost, target, fitsOne, skipped, noVehicles: !vehs.length };
 }
 let mixTimer;
 function scheduleMix() { clearTimeout(mixTimer); mixTimer = setTimeout(renderMix, 150); }
 function renderMix() {
   renderMixInputs(false);
-  const { plans, failures, types, allCost, target, fitsOne } = computePlans();
+  const { plans, failures, types, allCost, target, fitsOne, skipped, noVehicles } = computePlans();
   mixPlans = plans;
   if (selPlan >= plans.length) selPlan = 0;
   const totalBoxes = types.reduce((s, t) => s + t.qty, 0);
@@ -916,8 +942,10 @@ function renderMix() {
     else m.push(`<div class="msg"><b>✘ Does not fit in any single vehicle.</b> Send: <b>${esc(best.name)}</b>.</div>`);
     m.push(`<div class="msg ok">Recommended: <b>${esc(best.name)}</b>${best.cost !== null ? ` — ₹${fmt(best.cost)}` : ""}.${allCost ? "" : " Freight rates not set; ranked by fewest and smallest vehicles."}</div>`);
   }
+  if (skipped.length) m.push(`<div class="msg">Not included (missing dimensions or quantity): <b>${skipped.map(esc).join(", ")}</b>.</div>`);
   if (failures.length) m.push(`<div class="msg">Not feasible — ${failures.map(esc).join("; ")}.</div>`);
-  if (!plans.length) m.push(`<div class="msg">No feasible plan. Check box and vehicle dimensions.</div>`);
+  if (noVehicles) m.push(`<div class="msg">Select at least one vehicle under Allowed vehicles.</div>`);
+  else if (!plans.length) m.push(`<div class="msg">No feasible plan. Check box and vehicle dimensions.</div>`);
   $("m-msgs").innerHTML = m.join("");
 
   $("m-plans").innerHTML = plans.length ? `<tr><th>Plan</th><th class="num">Vehicles</th><th class="num">Freight</th><th class="num">Avg. fill</th></tr>` +
@@ -1051,10 +1079,12 @@ Viewer.prototype.draw2D = function () {
   drawSide(r.querySelector(".sidesvg"), this.data, w);
 };
 Viewer.prototype.show = function (data) {
+  if (data && data.list.length > MAX_DRAW) data = { ...data, list: data.list.slice(0, MAX_DRAW) };
   this.data = data;
   const r = this.root;
   this.draw2D();
-  r.querySelector(".legend").innerHTML = data ? data.legend.map(l => `<span><span class="sw" style="background:${l.c}"></span>${esc(l.t)}</span>`).join("") : "";
+  r.querySelector(".legend").innerHTML = data ? data.legend.map(l => `<span><span class="sw" style="background:${l.c}"></span>${esc(l.t)}</span>`).join("") +
+    (data.list.length >= MAX_DRAW || (data.list.length === 0) ? `<span>Too many boxes to draw individually — counts above are still exact.</span>` : "") : "";
   if (this.gl) this.gl.update(data);
 };
 Viewer.prototype.attach3D = function (make3D) {
