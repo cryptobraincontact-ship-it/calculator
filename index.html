@@ -182,6 +182,7 @@
       </div>
       <label class="check"><input type="checkbox" id="s-rot"> Allow 90° rotation on floor</label>
       <label class="check"><input type="checkbox" id="s-up"> This side up (no tipping)</label>
+      <label class="check"><input type="checkbox" id="s-adjust"> Adjust anyhow — fit extra boxes into leftover gaps by moving and rotating them (fully supported, no overhang)</label>
     </div>
   </section>
 
@@ -217,6 +218,7 @@
       <div id="m-items"></div>
       <button class="btn ghost" id="m-add">+ Add box type</button>
       <label class="check"><input type="checkbox" id="m-fill"> Fill empty spaces with other box types (on top of stacks and in side gaps)</label>
+      <label class="check"><input type="checkbox" id="m-adjust"> Adjust anyhow — fit remaining boxes into any leftover gap by moving and rotating them (fully supported, no overhang)</label>
       <p class="note">Box types are loaded in list order, first type nearest the cabin.</p>
     </div>
     <div class="card">
@@ -334,6 +336,7 @@
       </div>
       <div class="tablewrap"><table class="edit" id="v-table"></table></div>
       <p class="note">Default dimensions are approximate and vary by body builder. Enter measured internal dimensions for accurate results (7 ft 6 in = 7.5 ft). Settings are saved in this browser.</p>
+      <p class="note"><b>AC unit</b> is the reefer evaporator inside the box, at the top of the front wall, centred across the width. Width = across the truck, height = how far it hangs below the ceiling, depth = how far it reaches back from the front wall. Defaults are Carrier Transicold evaporator sizes for the unit class each body size usually carries (ceiling: Citimax 280/350, 400/500, 700, 1100; front wall: Supra nose-mount). Measure your unit and adjust.</p>
     </div>
     <div class="card">
       <h2>Clearances (cm)</h2>
@@ -342,7 +345,10 @@
         <div><label for="g-door">Door clearance</label><input type="number" id="g-door" step="any" min="0"></div>
         <div><label for="g-side">Side clearance</label><input type="number" id="g-side" step="any" min="0"></div>
       </div>
-      <p class="note">Keep at least 10 cm (4 in) above the load for air circulation. Do not load above the red load line.</p>
+      <div class="row" style="max-width:560px;margin-top:8px">
+        <div><label for="g-ac">Clearance around AC unit</label><input type="number" id="g-ac" step="any" min="0"></div>
+      </div>
+      <p class="note">Keep at least 10 cm (4 in) above the load for air circulation. Do not load above the red load line. Keep the AC unit's air outlet and return clear — no cargo within the AC clearance.</p>
     </div>
   </section>
 </main>
@@ -360,6 +366,18 @@ const DEFAULT_VEHICLES = [
   { id: "20", name: "20 ft", L: 19.3, W: 7.2, H: 7.0, kg: 7000, rate: "", note: "Eicher 2110 / Tata 1109 class" },
   { id: "24", name: "24 ft", L: 23.3, W: 7.4, H: 7.2, kg: 9000, rate: "", note: "Tata 1412 / Eicher 2114 class" }
 ];
+// Reefer evaporator (AC unit) inside the cargo box, top-front and centred across the width. cm: W across, H down from
+// the ceiling, D back from the front wall. Sizes from Carrier Transicold spec sheets for the unit class each body usually gets:
+// Citimax 280/350, Citimax 400/500 (≈ Xarios 5), Citimax 700, Citimax 1100 (≈ Xarios 6) ceiling units; Supra nose-mount wall unit.
+const DEFAULT_AC = {
+  "9":  { acType: "ceiling", acW: 86,    acH: 17,   acD: 61 },
+  "10": { acType: "ceiling", acW: 110,   acH: 19.5, acD: 61.5 },
+  "14": { acType: "ceiling", acW: 122,   acH: 27.5, acD: 55 },
+  "20": { acType: "ceiling", acW: 156,   acH: 22.5, acD: 69 },
+  "24": { acType: "wall",    acW: 122.5, acH: 55,   acD: 29 }
+};
+DEFAULT_VEHICLES.forEach(v => Object.assign(v, DEFAULT_AC[v.id]));
+const AC_TYPES = { none: "None", ceiling: "Ceiling (front)", wall: "Front wall" };
 const PALETTE = ["#3b82c4", "#e08a2e", "#3aa76d", "#c2527a", "#8a6fd1", "#c9a227", "#2bb3b3", "#d0603a"];
 const TO_MM = { mm: 1, cm: 10, in: 25.4, ft: 304.8 };
 const UNIT_NAME = { mm: "mm", cm: "cm", in: "in", ft: "ft" };
@@ -377,11 +395,11 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const DEFAULT_STATE = {
   mode: "single",
   vehicles: clone(DEFAULT_VEHICLES),
-  gaps: { top: 10, door: 0, side: 0 },
-  single: { veh: "20", unit: "cm", L: 60, W: 40, H: 30, wt: "", maxL: "", rot: true, up: true },
+  gaps: { top: 10, door: 0, side: 0, ac: 10 },
+  single: { veh: "20", unit: "cm", L: 60, W: 40, H: 30, wt: "", maxL: "", rot: true, up: true, adjust: false },
   pallet: { veh: "20", unit: "cm", preset: "120x100", L: 120, W: 100, base: 15, H: 150, wt: "", rot: true, stack: false, maxS: 2, bL: "", bW: "", bH: "", maxLoad: "" },
   mix: {
-    unit: "cm", off: {}, fill: true, target: "auto",
+    unit: "cm", off: {}, fill: true, adjust: false, target: "auto",
     items: [
       { name: "Box A", L: 60, W: 40, H: 30, qty: 300, wt: "", maxL: "", up: true, rot: true },
       { name: "Box B", L: 50, W: 30, H: 25, qty: 200, wt: "", maxL: "", up: true, rot: true }
@@ -394,6 +412,8 @@ function loadState() {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const s = JSON.parse(raw);
+      // Vehicles saved before AC units were modelled get the researched default for their size.
+      (s.vehicles || []).forEach(v => { if (v.acType === undefined) Object.assign(v, DEFAULT_AC[v.id] || { acType: "none", acW: "", acH: "", acD: "" }); });
       return { ...clone(DEFAULT_STATE), ...s, single: { ...DEFAULT_STATE.single, ...s.single }, pallet: { ...DEFAULT_STATE.pallet, ...s.pallet }, mix: { ...clone(DEFAULT_STATE.mix), ...s.mix }, gaps: { ...DEFAULT_STATE.gaps, ...s.gaps } };
     }
   } catch (e) {}
@@ -408,9 +428,53 @@ function truckOf(v) {
   const T = { L: v.L * 304.8, W: v.W * 304.8, H: v.H * 304.8 };
   const g = { top: (+S.gaps.top || 0) * 10, door: (+S.gaps.door || 0) * 10, side: (+S.gaps.side || 0) * 10 };
   const U = { L: Math.floor(T.L - g.door) + FIT_TOL, W: Math.floor(T.W - 2 * g.side) + FIT_TOL, H: Math.floor(T.H - g.top) + FIT_TOL };
-  return { T, U, gaps: g, valid: T.L > 0 && T.W > 0 && T.H > 0 && U.L > 0 && U.W > 0 && U.H > 0 };
+  return { T, U, gaps: g, ac: acOf(v, T, g), valid: T.L > 0 && T.W > 0 && T.H > 0 && U.L > 0 && U.W > 0 && U.H > 0 };
+}
+// The AC unit as a box in truck coordinates, plus the keep-out zone around it in usable-area coordinates
+// (x from the front wall, y from the first side gap). Cargo under the zone must stay below ob.zTop.
+function acOf(v, T, g) {
+  if (!v.acType || v.acType === "none") return null;
+  const W = (+v.acW || 0) * 10, H = (+v.acH || 0) * 10, D = (+v.acD || 0) * 10, clr = (+S.gaps.ac || 0) * 10;
+  if (!(W > 0 && H > 0 && D > 0)) return null;
+  const unit = { x: 0, y: (T.W - W) / 2, z: T.H - H, l: D, w: W, h: H };
+  const ob = { x1: 0, x2: D + clr, y1: unit.y - clr - g.side, y2: unit.y + W + clr - g.side, zTop: T.H - H - clr };
+  return { type: v.acType, unit, ob, clr };
+}
+// True when a placed box reaches into the AC keep-out zone.
+function hitsAC(p, ac) {
+  if (!ac) return false;
+  const o = ac.ob;
+  return p.x < o.x2 && p.x + p.l > o.x1 && p.y < o.y2 && p.y + p.w > o.y1 && p.z + p.h > o.zTop + FIT_TOL;
+}
+// Placements for a pack with anything reaching into the AC zone left out, first n in loading order.
+function placeAvoidingAC(pack, opt, x0, n, color, colorB, ac, y0 = 0, z0 = 0, spotOk = null) {
+  const list = placementsFrom(pack, opt, x0, ac ? MAX_DRAW : n, color, colorB, y0, z0, spotOk);
+  return (ac ? list.filter(p => !hitsAC(p, ac)) : list).slice(0, n);
+}
+// Loading instruction for the stacks under the AC unit; "" when the unit costs nothing.
+function acStep(ac, opt, what, x0 = 0) {
+  if (!ac) return "";
+  const allowed = Math.max(0, Math.floor((ac.ob.zTop + FIT_TOL) / opt.h));
+  if (allowed >= opt.layers) return "";
+  const o = ac.ob, g = ac.unit;
+  return `<span class="sw" style="background:#8a96a8"></span><b>Under the AC unit</b> (${AC_TYPES[ac.type].toLowerCase()}, ${cm(g.w)} wide × ${cm(g.h)} deep from ceiling, reaching ${cm(g.l)} from the front wall): within front ${cm(Math.max(o.x1, x0))}–${cm(o.x2)} and side ${cm(Math.max(0, o.y1))}–${cm(o.y2)}, stack ${allowed === 0 ? "<b>no</b> " + what : `only <b>${allowed}</b> layer${allowed > 1 ? "s" : ""}`} (keep ${cm(ac.clr)} clear of the unit for airflow).`;
+}
+// Boxes lost under the AC for a floor pack stacked `layers` high (section starting at x0), counted per stack without enumerating.
+function acLoss(pack, layers, h, x0, ac) {
+  if (!ac) return 0;
+  const o = ac.ob, allowed = Math.max(0, Math.floor((o.zTop + FIT_TOL) / h));
+  if (allowed >= layers) return 0;
+  // Grid cells k whose span [start + k*step, start + (k+1)*step) overlaps [a, b), clamped to 0..n-1.
+  const hit = (start, step, n, a, b) => {
+    const lo = Math.max(0, Math.floor((a - start) / step - 1) + 1), hi = Math.min(n - 1, Math.ceil((b - start) / step) - 1);
+    return Math.max(0, hi - lo + 1);
+  };
+  let spots = 0;
+  for (const bl of pack.blocks) spots += hit(x0 + bl.x, bl.pa, bl.cx, o.x1, o.x2) * hit(bl.y, bl.pb, bl.cy, o.y1, o.y2);
+  return spots * (layers - allowed);
 }
 const vehVolume = v => v.L * v.W * v.H;
+const acInfo = v => !v.acType || v.acType === "none" ? "No AC unit set" : `AC unit: ${AC_TYPES[v.acType].toLowerCase()}, ${v.acW} × ${v.acH} × ${v.acD} cm`;
 const hasRate = v => +v.rate > 0;
 
 // ============================================================
@@ -554,11 +618,104 @@ function shade(hex, amt) {
 }
 
 // ============================================================
+// Adjust anyhow: fit extra boxes into leftover empty space, turned any way the box allows.
+// Cuboids are {x, y, z, l, w, h} in usable-area coordinates (x from the front wall, l along the truck).
+// ============================================================
+const overlaps3 = (a, b) => a.x < b.x + b.l && b.x < a.x + a.l && a.y < b.y + b.w && b.y < a.y + a.w && a.z < b.z + b.h && b.z < a.z + a.h;
+const within3 = (a, b) => a.x >= b.x && a.y >= b.y && a.z >= b.z && a.x + a.l <= b.x + b.l && a.y + a.w <= b.y + b.w && a.z + a.h <= b.z + b.h;
+// Largest empty cuboids left in a space after removing an occupied one (up to one per side).
+function subtractSpace(s, o) {
+  if (!overlaps3(s, o)) return [s];
+  const out = [];
+  if (o.x > s.x) out.push({ ...s, l: o.x - s.x });
+  if (o.x + o.l < s.x + s.l) out.push({ ...s, x: o.x + o.l, l: s.x + s.l - o.x - o.l });
+  if (o.y > s.y) out.push({ ...s, w: o.y - s.y });
+  if (o.y + o.w < s.y + s.w) out.push({ ...s, y: o.y + o.w, w: s.y + s.w - o.y - o.w });
+  if (o.z > s.z) out.push({ ...s, h: o.z - s.z });
+  if (o.z + o.h < s.z + s.h) out.push({ ...s, z: o.z + o.h, h: s.z + s.h - o.z - o.h });
+  return out;
+}
+// Maximal empty spaces of container C around the occupied cuboids, ignoring any too small for a box.
+function emptySpaces(C, occ, minDim) {
+  let spaces = [C];
+  for (const o of occ) {
+    spaces = spaces.flatMap(s => subtractSpace(s, o)).filter(s => s.l >= minDim && s.w >= minDim && s.h >= minDim);
+    spaces = spaces.filter((s, i) => !spaces.some((t, j) => j !== i && within3(s, t) && (!within3(t, s) || j < i)));
+    if (spaces.length > 300) spaces = spaces.sort((a, b) => b.l * b.w * b.h - a.l * a.w * a.h).slice(0, 300);
+  }
+  return spaces;
+}
+// Ways a box may be placed: [along truck length, across, vertical]. "This side up" keeps its height vertical.
+function orientations(t) {
+  const { L, W, H } = t;
+  const all = t.up ? [[L, W, H], ...(t.rot ? [[W, L, H]] : [])] : [[L, W, H], [W, L, H], [L, H, W], [H, L, W], [W, H, L], [H, W, L]];
+  const seen = new Set();
+  return all.filter(d => { const k = d.join("x"); return !seen.has(k) && seen.add(k); });
+}
+const vertName = (t, d) => d[2] === t.H ? "upright" : d[2] === t.L ? "on its side, length vertical" : "on its side, width vertical";
+const acCuboid = (ac, C) => ({ x: ac.ob.x1, y: ac.ob.y1, z: ac.ob.zTop, l: ac.ob.x2 - ac.ob.x1, w: ac.ob.y2 - ac.ob.y1, h: C.h, solid: false });
+function bbox3(list) {
+  const x = Math.min(...list.map(p => p.x)), y = Math.min(...list.map(p => p.y)), z = Math.min(...list.map(p => p.z));
+  return { x, y, z, l: Math.max(...list.map(p => p.x + p.l)) - x, w: Math.max(...list.map(p => p.y + p.w)) - y, h: Math.max(...list.map(p => p.z + p.h)) - z };
+}
+// Greedily place grids of extra boxes into the biggest-payoff empty space. A space above the floor is usable only
+// where it rests completely on a solid (fully stacked) cuboid, so nothing overhangs or sits on a gap.
+// items: [{ t, left, color }]; returns [{ t, n, d, nx, ny, nz, at, list }].
+function adjustFill(C, occ, items, kgLeft) {
+  occ = occ.slice();
+  const extras = [], minDim = Math.min(...items.map(it => Math.min(it.t.L, it.t.W, it.t.H)));
+  for (let iter = 0; iter < 40; iter++) {
+    let best = null;
+    for (const sp of emptySpaces(C, occ, minDim)) {
+      let foot = sp;
+      if (sp.z > FIT_TOL) {
+        foot = null;
+        let area = 0;
+        for (const o of occ) if (o.solid && Math.abs(o.z + o.h - sp.z) <= FIT_TOL) {
+          const x1 = Math.max(sp.x, o.x), x2 = Math.min(sp.x + sp.l, o.x + o.l), y1 = Math.max(sp.y, o.y), y2 = Math.min(sp.y + sp.w, o.y + o.w);
+          if (x2 > x1 && y2 > y1 && (x2 - x1) * (y2 - y1) > area) { area = (x2 - x1) * (y2 - y1); foot = { x: x1, y: y1, l: x2 - x1, w: y2 - y1 }; }
+        }
+        if (!foot) continue;
+      }
+      for (const it of items) {
+        if (it.left <= 0) continue;
+        const wLeft = it.t.wt > 0 && kgLeft < Infinity ? Math.floor(kgLeft / it.t.wt) : Infinity;
+        for (const d of orientations(it.t)) {
+          const nx = Math.floor((foot.l + FIT_TOL) / d[0]), ny = Math.floor((foot.w + FIT_TOL) / d[1]);
+          let nz = Math.floor((sp.h + FIT_TOL) / d[2]);
+          if (it.t.maxL > 0) nz = Math.min(nz, it.t.maxL);
+          const n = Math.min(nx * ny * nz, it.left, wLeft), vol = n * d[0] * d[1] * d[2];
+          if (n > 0 && (!best || vol > best.vol)) best = { it, d, nx, ny, nz, n, vol, at: { x: foot.x, y: foot.y, z: sp.z } };
+        }
+      }
+    }
+    if (!best) break;
+    const { it, d, nx, ny, nz, n, at } = best, list = [];
+    for (let k = 0; k < nz && list.length < n; k++)
+      for (let i = 0; i < nx && list.length < n; i++)
+        for (let j = 0; j < ny && list.length < n; j++)
+          list.push({ x: at.x + i * d[0], y: at.y + j * d[1], z: at.z + k * d[2], l: d[0], w: d[1], h: d[2], color: it.color });
+    const full = n === nx * ny * nz;
+    occ.push({ x: at.x, y: at.y, z: at.z, l: nx * d[0], w: ny * d[1], h: Math.ceil(n / (nx * ny)) * d[2], solid: full });
+    it.left -= n;
+    if (it.t.wt > 0) kgLeft -= n * it.t.wt;
+    extras.push({ t: it.t, n, d, nx, ny, nz: Math.ceil(n / (nx * ny)), at, list });
+  }
+  return extras;
+}
+// Loading instructions for adjusted extras.
+function extraSteps(extras, conv, nameOf) {
+  return extras.map(e => `<span class="sw" style="background:${e.list[0].color}"></span><b>Adjusted: ${nameOf ? esc(nameOf(e.t)) + " — " : ""}${fmt(e.n)} extra ${plural(e.n, "box", "boxes")}</b>, ${vertName(e.t, e.d)}
+    (${conv(e.d[0])} along truck length × ${conv(e.d[1])} across × ${conv(e.d[2])} high): from front ${cm(e.at.x)}–${cm(e.at.x + e.nx * e.d[0])}, from side ${cm(e.at.y)}–${cm(e.at.y + e.ny * e.d[1])},
+    ${e.at.z > FIT_TOL ? `on top of the load at ${cm(e.at.z)} height` : "on the floor"} — ${e.nx} × ${e.ny} × ${e.nz}.`);
+}
+
+// ============================================================
 // MODE 1: single box type
 // ============================================================
 function singleBox() {
   const s = S.single, u = TO_MM[s.unit];
-  return { L: toMM(s.L, s.unit), W: toMM(s.W, s.unit), H: toMM(s.H, s.unit), up: s.up, rot: s.rot, maxL: parseInt(s.maxL) || 0, wt: +s.wt || 0 };
+  return { L: toMM(s.L, s.unit), W: toMM(s.W, s.unit), H: toMM(s.H, s.unit), up: s.up, rot: s.rot, maxL: parseInt(s.maxL) || 0, wt: +s.wt || 0, adjust: !!s.adjust };
 }
 function calcSingle(v, box) {
   const tr = truckOf(v);
@@ -567,16 +724,28 @@ function calcSingle(v, box) {
   if (!tr.valid) { res.error = `Invalid dimensions for ${v.name}. Check the Vehicles tab.`; return res; }
   for (const o of standOptions(box, tr.U)) {
     const p = pack2D(tr.U.L, tr.U.W, o.f1, o.f2, box.rot);
-    const s1 = Math.floor(tr.U.L / o.f1) * Math.floor(tr.U.W / o.f2), s2 = Math.floor(tr.U.L / o.f2) * Math.floor(tr.U.W / o.f1);
-    res.options.push({ ...o, perLayer: p.count, total: p.count * o.layers, pack: p, s1, s2 });
+    // Single-orientation layouts for the comparison table, also reduced for the AC unit.
+    const grid = (a, b) => { const bl = makeBlock(0, 0, tr.U.L, tr.U.W, 0, a, b); return { per: bl.count, tot: bl.count * o.layers - acLoss({ blocks: [bl] }, o.layers, o.h, 0, tr.ac) }; };
+    const loss = acLoss(p, o.layers, o.h, 0, tr.ac);
+    res.options.push({ ...o, perLayer: p.count, total: p.count * o.layers - loss, acLoss: loss, pack: p, t1: grid(o.f1, o.f2), t2: grid(o.f2, o.f1) });
   }
   res.options.sort((p, q) => q.total - p.total || (p.up === 2 ? -1 : q.up === 2 ? 1 : 0));
   const best = res.options[0];
   if (!best || best.total === 0) { res.error = "Box does not fit in this vehicle."; return res; }
   res.best = best;
   res.weightLimit = box.wt > 0 && +v.kg > 0 ? Math.floor(+v.kg / box.wt) : Infinity;
-  res.final = Math.min(best.total, res.weightLimit);
+  res.final = res.base = Math.min(best.total, res.weightLimit);
   if (res.final === 0) { res.error = `Weight per unit (${fmt(box.wt)} kg) exceeds the payload of ${v.name} (${fmt(v.kg)} kg).`; return res; }
+  res.extras = []; res.extra = 0;
+  if (box.adjust && res.base === best.total) {
+    const C = { x: 0, y: 0, z: 0, l: tr.U.L, w: tr.U.W, h: tr.U.H };
+    // Each floor block stacked full height is occupied; it can carry extras only if no stack in it was cut short by the AC.
+    const occ = best.pack.blocks.map(bl => ({ x: bl.x, y: bl.y, z: 0, l: bl.cx * bl.pa, w: bl.cy * bl.pb, h: best.layers * best.h, solid: acLoss({ blocks: [bl] }, best.layers, best.h, 0, tr.ac) === 0 }));
+    if (tr.ac) occ.push(acCuboid(tr.ac, C));
+    res.extras = adjustFill(C, occ, [{ t: box, left: res.weightLimit - res.base, color: PALETTE[4] }], Infinity);
+    res.extra = res.extras.reduce((s, e) => s + e.n, 0);
+    res.final += res.extra;
+  }
   res.ok = true;
   return res;
 }
@@ -592,7 +761,7 @@ function renderSingle() {
   if (v) S.single.veh = v.id;
   $("s-vehicles").innerHTML = S.vehicles.map(x => `<button data-id="${esc(x.id)}" class="${v && x.id === v.id ? "active" : ""}" title="${esc(x.note || "")}">${esc(x.name)}</button>`).join("");
   if (!v) { $("s-stats").innerHTML = ""; $("s-msgs").innerHTML = `<div class="msg">Add a vehicle in the Vehicles tab.</div>`; return; }
-  $("s-vehinfo").innerHTML = `Internal: ${v.L} × ${v.W} × ${v.H} ft · Payload ${fmt(+v.kg || 0)} kg${hasRate(v) ? ` · ₹${fmt(v.rate)}/trip` : ""} · <a href="#" data-goto="settings">Edit</a>`;
+  $("s-vehinfo").innerHTML = `Internal: ${v.L} × ${v.W} × ${v.H} ft · Payload ${fmt(+v.kg || 0)} kg${hasRate(v) ? ` · ₹${fmt(v.rate)}/trip` : ""} · ${acInfo(v)} · <a href="#" data-goto="settings">Edit</a>`;
   const box = singleBox(), res = calcSingle(v, box), conv = convFor(S.single.unit);
   $("s-printtitle").textContent = `Load Plan — ${v.name} vehicle, box ${S.single.L} × ${S.single.W} × ${S.single.H} ${UNIT_NAME[S.single.unit]}`;
 
@@ -607,11 +776,14 @@ function renderSingle() {
       <div class="stat main"><div class="v">${fmt(res.final)}</div><div class="k">Total boxes</div></div>
       <div class="stat"><div class="v">${fmt(b.perLayer)}</div><div class="k">Per layer</div></div>
       <div class="stat"><div class="v">${b.layers}</div><div class="k">Layers</div></div>
+      ${res.extra ? `<div class="stat"><div class="v">+${fmt(res.extra)}</div><div class="k">Extra (adjusted)</div></div>` : ""}
       <div class="stat"><div class="v">${fmt(res.final * boxVol / tVol * 100, 1)}%</div><div class="k">Space utilisation</div></div>
       ${box.wt > 0 ? `<div class="stat"><div class="v">${fmt(res.final * box.wt)} kg</div><div class="k">Total weight</div></div>` : ""}
       ${hasRate(v) ? `<div class="stat"><div class="v">₹${fmt(v.rate / res.final, 2)}</div><div class="k">Freight per box</div></div>` : ""}`;
     const m = [];
-    if (res.final < b.total) m.push(`<div class="msg">Space allows ${fmt(b.total)} boxes; payload limit (${fmt(v.kg)} kg) caps the load at <b>${fmt(res.final)}</b>.</div>`);
+    if (box.adjust) m.push(res.extra ? `<div class="msg ok">Adjust anyhow: <b>${fmt(res.extra)} extra ${plural(res.extra, "box", "boxes")}</b> fit into leftover gaps (shown in purple).</div>`
+      : `<div class="msg">Adjust anyhow: ${res.base < b.total ? "payload limit already reached." : "no leftover gap is large enough for another box."}</div>`);
+    if (res.base < b.total) m.push(`<div class="msg">Space allows ${fmt(b.total)} boxes; payload limit (${fmt(v.kg)} kg) caps the load at <b>${fmt(res.final)}</b>.</div>`);
     if (b.up !== 2) m.push(`<div class="msg">Best fit requires boxes on their side (${SIDE_NAME[b.up]} vertical). Enable "This side up" if not permitted.</div>`);
     const usedL = Math.max(...b.pack.blocks.map(bl => bl.x + bl.cx * bl.pa)), usedW = Math.max(...b.pack.blocks.map(bl => bl.y + bl.cy * bl.pb));
     m.push(`<div class="msg ok">Unused space — length: ${cm(Math.max(0, res.T.L - usedL))}, width: ${cm(Math.max(0, res.T.W - usedW))}, height: ${cm(Math.max(0, res.T.H - b.layers * b.h))}.</div>`);
@@ -621,27 +793,31 @@ function renderSingle() {
     if (b.up !== 2) steps.push(`Place each box with its <b>${SIDE_NAME[b.up]} (${conv(b.h)})</b> vertical.`);
     b.pack.blocks.forEach((bl, n) => steps.push(`<span class="sw" style="background:${bl.o ? PALETTE[1] : PALETTE[0]}"></span><b>Block ${n + 1}</b> (from front ${cm(bl.x)}–${cm(bl.x + bl.cx * bl.pa)}, from side ${cm(bl.y)}–${cm(bl.y + bl.cy * bl.pb)}): ${blockText(bl, conv)} per layer.`));
     steps.push(`Repeat for <b>${b.layers}</b> layers (${conv(b.h)} each). Maintain a minimum ${cm(res.gaps.top)} air gap at the top.`);
-    steps.push(`Total: ${fmt(b.perLayer)} × ${b.layers} = <b>${fmt(b.total)}</b> boxes${res.final < b.total ? ` (stop at ${fmt(res.final)} — payload limit)` : ""}.`);
+    const acS = acStep(res.ac, b, "boxes");
+    if (acS) steps.push(acS);
+    steps.push(...extraSteps(res.extras, conv));
+    steps.push(`Total: ${fmt(b.perLayer)} × ${b.layers}${b.acLoss ? ` − ${fmt(b.acLoss)} under AC unit` : ""}${res.extra ? ` + ${fmt(res.extra)} adjusted` : ""} = <b>${fmt(b.total + res.extra)}</b> boxes${res.base < b.total ? ` (stop at ${fmt(res.base)} — payload limit)` : ""}.`);
     $("s-steps").innerHTML = steps.map(s => `<li>${s}</li>`).join("");
 
     const rows = [];
     for (const o of res.options) {
       const t = o.up === 2 ? "Upright" : `On side (${SIDE_NAME[o.up]} vertical)`;
-      rows.push({ t: `${t} — orientation A`, per: o.s1, lay: o.layers });
+      rows.push({ t: `${t} — orientation A`, per: o.t1.per, lay: o.layers, tot: o.t1.tot });
       if (box.rot) {
-        rows.push({ t: `${t} — orientation B (rotated 90°)`, per: o.s2, lay: o.layers });
-        rows.push({ t: `${t} — mixed (optimised)`, per: o.perLayer, lay: o.layers });
+        rows.push({ t: `${t} — orientation B (rotated 90°)`, per: o.t2.per, lay: o.layers, tot: o.t2.tot });
+        rows.push({ t: `${t} — mixed (optimised)`, per: o.perLayer, lay: o.layers, tot: o.total });
       }
     }
-    const bt = Math.max(...rows.map(r => r.per * r.lay));
-    $("s-compare").innerHTML = `<tr><th>Method</th><th class="num">Per layer</th><th class="num">Layers</th><th class="num">Total</th></tr>` +
-      rows.map(r => `<tr class="${r.per * r.lay === bt ? "best" : ""}"><td>${r.t}</td><td class="num">${fmt(r.per)}</td><td class="num">${r.lay}</td><td class="num">${fmt(r.per * r.lay)}</td></tr>`).join("");
+    const bt = Math.max(...rows.map(r => r.tot));
+    $("s-compare").innerHTML = `<tr><th>Method</th><th class="num">Per layer</th><th class="num">Layers</th><th class="num">Total${res.ac ? " (after AC)" : ""}</th></tr>` +
+      rows.map(r => `<tr class="${r.tot === bt ? "best" : ""}"><td>${r.t}</td><td class="num">${fmt(r.per)}</td><td class="num">${r.lay}</td><td class="num">${fmt(r.tot)}</td></tr>`).join("");
 
-    const list = placementsFrom(b.pack, b, 0, res.final, PALETTE[0], PALETTE[1]);
+    const list = placeAvoidingAC(b.pack, b, 0, res.base, PALETTE[0], PALETTE[1], res.ac).concat(...res.extras.map(e => e.list));
     viewers.single.show({
-      T: res.T, gaps: res.gaps, list,
+      T: res.T, gaps: res.gaps, ac: res.ac, list,
       labels: b.pack.blocks.map((bl, n) => ({ x: bl.x, y: bl.y, w: bl.cx * bl.pa, d: bl.cy * bl.pb, text: `${n + 1}: ${bl.cx}×${bl.cy}` })),
-      legend: [{ c: PALETTE[0], t: "Orientation A" }, ...(b.pack.blocks.some(x => x.o) ? [{ c: PALETTE[1], t: "Orientation B (rotated 90°)" }] : [])],
+      legend: [{ c: PALETTE[0], t: "Orientation A" }, ...(b.pack.blocks.some(x => x.o) ? [{ c: PALETTE[1], t: "Orientation B (rotated 90°)" }] : []),
+        ...(res.extra ? [{ c: PALETTE[4], t: "Extra (adjusted)" }] : [])],
       caption: `${fmt(b.perLayer)} per layer × ${b.layers} layers`
     });
   }
@@ -658,7 +834,7 @@ function renderSingle() {
         <td>${esc(x.name)}${cheapest ? '<span class="badge">Lowest cost</span>' : ""}</td>
         <td class="hide-sm">${x.L} × ${x.W} × ${x.H}</td>
         <td class="num">${r.ok ? fmt(r.best.perLayer) : "—"}</td><td class="num">${r.ok ? r.best.layers : "—"}</td>
-        <td class="num">${r.ok ? fmt(r.final) + (r.final < r.best.total ? " (payload)" : "") : "Does not fit"}</td>
+        <td class="num">${r.ok ? fmt(r.final) + (r.base < r.best.total ? " (payload)" : "") + (r.extra ? ` (+${fmt(r.extra)} adj.)` : "") : "Does not fit"}</td>
         <td class="num">${cost !== null ? "₹" + fmt(cost, 2) : "—"}</td></tr>`;
     }).join("");
 }
@@ -704,7 +880,7 @@ function renderPallet() {
   $("p-vehicles").innerHTML = S.vehicles.map(x => `<button data-id="${esc(x.id)}" class="${v && x.id === v.id ? "active" : ""}">${esc(x.name)}</button>`).join("");
   $("p-stackrow").classList.toggle("hidden", !p.stack);
   if (!v) { $("p-stats").innerHTML = ""; $("p-msgs").innerHTML = `<div class="msg">Add a vehicle in the Vehicles tab.</div>`; return; }
-  $("p-vehinfo").innerHTML = `Internal: ${v.L} × ${v.W} × ${v.H} ft · Payload ${fmt(+v.kg || 0)} kg${hasRate(v) ? ` · ₹${fmt(v.rate)}/trip` : ""} · <a href="#" data-goto="settings">Edit</a>`;
+  $("p-vehinfo").innerHTML = `Internal: ${v.L} × ${v.W} × ${v.H} ft · Payload ${fmt(+v.kg || 0)} kg${hasRate(v) ? ` · ₹${fmt(v.rate)}/trip` : ""} · ${acInfo(v)} · <a href="#" data-goto="settings">Edit</a>`;
   const res = calcPallet(v), spec = res.spec, conv = convFor(p.unit);
   $("p-H").disabled = spec.auto;
   $("p-hnote").textContent = spec.auto && spec.boxes > 0 ? `${fmt(spec.boxes)} boxes per pallet. Loaded height calculated from boxes: ${conv(spec.H)} (base ${conv(spec.base)} + ${spec.boxLayers} × ${conv(spec.box.H)}).` : "";
@@ -738,11 +914,13 @@ function renderPallet() {
     steps.push(`Load from the front wall (cabin side). ${res.gaps.side > 0 ? `Leave ${cm(res.gaps.side)} on each side.` : "Keep pallets flush against one side wall."}`);
     b.pack.blocks.forEach((bl, n) => steps.push(`<span class="sw" style="background:${bl.o ? PALETTE[5] : PALETTE[2]}"></span><b>Block ${n + 1}</b> (from front ${cm(bl.x)}–${cm(bl.x + bl.cx * bl.pa)}, from side ${cm(bl.y)}–${cm(bl.y + bl.cy * bl.pb)}): ${palletText(bl)}.`));
     if (b.layers > 1) steps.push(`Stack <b>${b.layers}</b> levels (${conv(b.h)} each).`);
-    steps.push(`Maintain a minimum ${cm(res.gaps.top)} air gap at the top. Total: ${fmt(b.perLayer)} × ${b.layers} = <b>${fmt(b.total)}</b> pallets${res.final < b.total ? ` (stop at ${fmt(res.final)} — payload limit)` : ""}.`);
+    const acS = acStep(res.ac, b, "pallets");
+    if (acS) steps.push(acS);
+    steps.push(`Maintain a minimum ${cm(res.gaps.top)} air gap at the top. Total: ${fmt(b.perLayer)} × ${b.layers}${b.acLoss ? ` − ${fmt(b.acLoss)} under AC unit` : ""} = <b>${fmt(b.total)}</b> pallets${res.final < b.total ? ` (stop at ${fmt(res.final)} — payload limit)` : ""}.`);
     $("p-steps").innerHTML = steps.map(s => `<li>${s}</li>`).join("");
 
     viewers.pallet.show({
-      T: res.T, gaps: res.gaps, list: placementsFrom(b.pack, b, 0, res.final, PALETTE[2], PALETTE[5]),
+      T: res.T, gaps: res.gaps, ac: res.ac, list: placeAvoidingAC(b.pack, b, 0, res.final, PALETTE[2], PALETTE[5], res.ac),
       labels: b.pack.blocks.map((bl, n) => ({ x: bl.x, y: bl.y, w: bl.cx * bl.pa, d: bl.cy * bl.pb, text: `${n + 1}: ${bl.cx}×${bl.cy}` })),
       legend: [{ c: PALETTE[2], t: "Orientation A" }, ...(b.pack.blocks.some(x => x.o) ? [{ c: PALETTE[5], t: "Orientation B (rotated 90°)" }] : [])],
       caption: `${fmt(b.perLayer)} floor positions × ${b.layers} level${b.layers > 1 ? "s" : ""}`
@@ -775,17 +953,21 @@ function mixTypes() {
   })).filter(t => t.L > 0 && t.W > 0 && t.H > 0 && t.qty > 0);
 }
 // Most boxes of type t that fit in a section of length R.
-function capacity(t, R, U) {
+// A section starting at x0 loses the stacks that reach into the AC zone.
+function capacity(t, R, U, x0 = 0, ac = null) {
   let best = 0;
-  for (const o of standOptions(t, U)) best = Math.max(best, pack2D(R, U.W, o.f1, o.f2, t.rot).count * o.layers);
+  for (const o of standOptions(t, U)) {
+    const p = pack2D(R, U.W, o.f1, o.f2, t.rot);
+    best = Math.max(best, p.count * o.layers - acLoss(p, o.layers, o.h, x0, ac));
+  }
   return best;
 }
-// Shortest section (from the cabin side) that holds n boxes of type t.
-function shortestSection(t, n, R, U) {
+// Shortest section (from x0 towards the door) that holds n boxes of type t.
+function shortestSection(t, n, R, U, x0 = 0, ac = null) {
   let best = null;
   for (const o of standOptions(t, U)) {
     const X = rasterPoints(R, o.f1, o.f2, t.rot).filter(x => x > 0);
-    const cnt = x => pack2D(x, U.W, o.f1, o.f2, t.rot).count * o.layers;
+    const cnt = x => { const p = pack2D(x, U.W, o.f1, o.f2, t.rot); return p.count * o.layers - acLoss(p, o.layers, o.h, x0, ac); };
     if (!X.length || cnt(X[X.length - 1]) < n) continue;
     let lo = 0, hi = X.length - 1;
     while (lo < hi) { const m = (lo + hi) >> 1; if (cnt(X[m]) >= n) hi = m; else lo = m + 1; }
@@ -797,7 +979,7 @@ function shortestSection(t, n, R, U) {
 function packTrucks(v, types, qtys) {
   const tr = truckOf(v);
   if (!tr.valid) return { error: "invalid dimensions" };
-  const unfit = types.filter(t => qtys[t.i] > 0 && (capacity(t, tr.U.L, tr.U) === 0 || (t.wt > 0 && +v.kg > 0 && t.wt > +v.kg)));
+  const unfit = types.filter(t => qtys[t.i] > 0 && (capacity(t, tr.U.L, tr.U, 0, tr.ac) === 0 || (t.wt > 0 && +v.kg > 0 && t.wt > +v.kg)));
   if (unfit.length) return { error: unfit.map(t => t.name).join(", ") + " does not fit" };
   const rem = { ...qtys }, trucks = [];
   while (types.some(t => rem[t.i] > 0)) {
@@ -807,20 +989,35 @@ function packTrucks(v, types, qtys) {
     for (const t of types) {
       if (rem[t.i] <= 0 || R <= 0) continue;
       const wLeft = +v.kg > 0 && t.wt > 0 ? Math.floor((+v.kg - wt) / t.wt) : Infinity;
-      const n = Math.min(rem[t.i], capacity(t, R, tr.U), wLeft);
+      const n = Math.min(rem[t.i], capacity(t, R, tr.U, x0, tr.ac), wLeft);
       if (n <= 0) continue;
-      const sec = shortestSection(t, n, R, tr.U);
+      const sec = shortestSection(t, n, R, tr.U, x0, tr.ac);
       if (!sec) continue;
       sections.push({ t, n, x0, ...sec });
       x0 += sec.len; R -= sec.len; wt += n * t.wt; rem[t.i] -= n;
     }
     if (!sections.length) return { error: "could not be loaded" };
-    sections.forEach(s => s.list = placementsFrom(s.pack, s.opt, s.x0, s.n, s.t.color, shade(s.t.color, -0.12)));
+    sections.forEach(s => s.list = placeAvoidingAC(s.pack, s.opt, s.x0, s.n, s.t.color, shade(s.t.color, -0.12), tr.ac));
     const fills = S.mix.fill ? fillSpaces(v, tr, sections, types, rem, wt) : [];
     fills.forEach(f => { rem[f.t.i] -= f.n; wt += f.n * f.t.wt; });
+    let extras = [];
+    if (S.mix.adjust && types.some(t => rem[t.i] > 0)) {
+      const C = { x: 0, y: 0, z: 0, l: tr.U.L, w: tr.U.W, h: tr.U.H }, occ = [];
+      // Section blocks are occupied to full stack height; a block can carry extras only if every stack in it is complete.
+      sections.forEach(s => s.pack.blocks.forEach(bl => {
+        const c = { x: s.x0 + bl.x, y: bl.y, z: 0, l: bl.cx * bl.pa, w: bl.cy * bl.pb, h: s.opt.layers * s.opt.h };
+        const inside = s.list.filter(p => p.x >= c.x && p.x < c.x + c.l && p.y >= c.y && p.y < c.y + c.w).length;
+        occ.push({ ...c, solid: inside === bl.cx * bl.cy * s.opt.layers });
+      }));
+      fills.forEach(f => occ.push({ ...bbox3(f.list), solid: false }));
+      if (tr.ac) occ.push(acCuboid(tr.ac, C));
+      const items = types.filter(t => rem[t.i] > 0).map(t => ({ t, left: rem[t.i], color: shade(t.color, 0.18) }));
+      extras = adjustFill(C, occ, items, +v.kg > 0 ? +v.kg - wt : Infinity);
+      extras.forEach(e => { rem[e.t.i] -= e.n; wt += e.n * e.t.wt; });
+    }
     const byType = {};
-    [...sections, ...fills].forEach(x => byType[x.t.i] = (byType[x.t.i] || 0) + x.n);
-    trucks.push({ v, tr, sections, fills, wt, byType, count: Object.values(byType).reduce((a, b) => a + b, 0) });
+    [...sections, ...fills, ...extras].forEach(x => byType[x.t.i] = (byType[x.t.i] || 0) + x.n);
+    trucks.push({ v, tr, sections, fills, extras, wt, byType, count: Object.values(byType).reduce((a, b) => a + b, 0) });
   }
   return { trucks };
 }
@@ -852,7 +1049,7 @@ function fillSpaces(v, tr, sections, types, rem, wt) {
         if (!pack.count) continue;
         const ok = sp.kind === "top" ? p => isSupported(p, sp.support) : null;
         const n0 = Math.min(left[t.i], wLeft);
-        const list = placementsFrom(pack, o, sp.x, n0, t.color, shade(t.color, -0.12), sp.y, sp.z, ok);
+        const list = placeAvoidingAC(pack, o, sp.x, n0, t.color, shade(t.color, -0.12), tr.ac, sp.y, sp.z, ok);
         const vol = list.length * t.L * t.W * t.H;
         if (list.length && (!best || vol > best.vol)) best = { t, opt: o, pack, sp, list, n: list.length, vol };
       }
@@ -957,7 +1154,7 @@ function renderMix() {
   renderTruck();
 }
 function truckFill(t) {
-  const bv = [...t.sections, ...t.fills].reduce((s, x) => s + x.n * x.t.L * x.t.W * x.t.H, 0);
+  const bv = [...t.sections, ...t.fills, ...t.extras].reduce((s, x) => s + x.n * x.t.L * x.t.W * x.t.H, 0);
   return bv / (t.tr.T.L * t.tr.T.W * t.tr.T.H) * 100;
 }
 function renderTruck() {
@@ -975,11 +1172,12 @@ function renderTruck() {
   const labels = [];
   t.sections.forEach((s, k) => {
     const conv = convFor(s.t.unit); // box sizes in the unit this box was entered in
-    const cap = s.pack.count * s.opt.layers;
+    const cap = s.pack.count * s.opt.layers - acLoss(s.pack, s.opt.layers, s.opt.h, s.x0, t.tr.ac);
+    const acS = t.tr.ac && s.x0 < t.tr.ac.ob.x2 ? acStep(t.tr.ac, s.opt, "boxes", s.x0) : "";
     const sub = s.pack.blocks.map(bl => `<li>${s.pack.blocks.length > 1 ? `From front ${cm(s.x0 + bl.x)}–${cm(s.x0 + bl.x + bl.cx * bl.pa)}, from side ${cm(bl.y)}–${cm(bl.y + bl.cy * bl.pb)}: ` : ""}${blockText(bl, conv)} per layer</li>`).join("");
     steps.push(`<span class="sw" style="background:${s.t.color}"></span><b>Section ${k + 1}: ${esc(s.t.name)} — ${fmt(s.n)} ${plural(s.n, "box", "boxes")}</b> (from front ${cm(s.x0)}–${cm(s.x0 + s.len)})
       ${s.opt.up !== 2 ? `<br>Boxes on side — ${SIDE_NAME[s.opt.up]} (${conv(s.opt.h)}) vertical.` : ""}
-      <ul>${sub}<li>${s.opt.layers === 1 ? "Single layer (no stacking)" : `Stack up to ${s.opt.layers} layers`}${s.n < cap ? ` (last row: ${fmt(cap - s.n)} ${plural(cap - s.n, "position", "positions")} empty)` : ""}</li></ul>`);
+      <ul>${sub}<li>${s.opt.layers === 1 ? "Single layer (no stacking)" : `Stack up to ${s.opt.layers} layers`}${s.n < cap ? ` (last row: ${fmt(cap - s.n)} ${plural(cap - s.n, "position", "positions")} empty)` : ""}</li>${acS ? `<li>${acS}</li>` : ""}</ul>`);
     list = list.concat(s.list);
     labels.push({ x: s.x0, y: 0, w: s.len, d: Math.max(...s.pack.blocks.map(bl => bl.y + bl.cy * bl.pb)), text: `${k + 1}: ${s.t.name}`, section: true });
   });
@@ -997,14 +1195,17 @@ function renderTruck() {
       <ul>${f.pack.blocks.map(bl => `<li>${f.pack.blocks.length > 1 ? `From front ${cm(f.sp.x + bl.x)}–${cm(f.sp.x + bl.x + bl.cx * bl.pa)}, from side ${cm(f.sp.y + bl.y)}–${cm(f.sp.y + bl.y + bl.cy * bl.pb)}: ` : ""}${blockText(bl, conv)} per layer</li>`).join("")}<li>${layers} layer${layers > 1 ? "s" : ""}</li></ul>`);
     list = list.concat(f.list);
   });
+  t.extras.forEach(e => { steps.push(...extraSteps([e], convFor(e.t.unit), x => x.name)); list = list.concat(e.list); });
   steps.push(`Maintain a minimum ${cm(t.tr.gaps.top)} air gap at the top. Secure open spaces with dunnage or airbags.`);
   $("m-steps").innerHTML = steps.map(s => `<li>${s}</li>`).join("");
-  const types = [...new Map([...t.sections, ...t.fills].map(s => [s.t.i, s.t])).values()];
-  viewers.mix.show({ T: t.tr.T, gaps: t.tr.gaps, list, labels, legend: types.map(x => ({ c: x.color, t: x.name })), caption: `Truck ${selTruck + 1}: ${fmt(t.count)} boxes` });
+  const types = [...new Map([...t.sections, ...t.fills, ...t.extras].map(s => [s.t.i, s.t])).values()];
+  viewers.mix.show({ T: t.tr.T, gaps: t.tr.gaps, ac: t.tr.ac, list, labels,
+    legend: types.map(x => ({ c: x.color, t: x.name })).concat(t.extras.length ? [{ c: shade(t.extras[0].t.color, 0.18), t: "Extra (adjusted, lighter shade)" }] : []), caption: `Truck ${selTruck + 1}: ${fmt(t.count)} boxes` });
 }
 
 function renderMixInputs(full = true) {
   $("m-fill").checked = S.mix.fill;
+  $("m-adjust").checked = !!S.mix.adjust;
   if (S.mix.target !== "auto" && !S.vehicles.some(v => v.id === S.mix.target)) S.mix.target = "auto";
   $("m-target").innerHTML = `<option value="auto">Auto — recommend best plan</option>` +
     S.vehicles.map(v => `<option value="${esc(v.id)}">${esc(v.name)} — check this vehicle</option>`).join("");
@@ -1035,14 +1236,16 @@ function renderMixInputs(full = true) {
 // ============================================================
 // MODE 3: vehicles
 // ============================================================
-const VEH_LABELS = { L: "Length (ft)", W: "Width (ft)", H: "Height (ft)", kg: "Payload (kg)", rate: "Freight (₹/trip)" };
+const VEH_LABELS = { L: "Length (ft)", W: "Width (ft)", H: "Height (ft)", kg: "Payload (kg)", rate: "Freight (₹/trip)", acW: "AC width (cm)", acH: "AC height (cm)", acD: "AC depth (cm)" };
 function renderSettings() {
-  $("v-table").innerHTML = `<tr><th>Name</th><th>Length (ft)</th><th>Width (ft)</th><th>Height (ft)</th><th>Payload (kg)</th><th>Freight (₹/trip)</th><th></th></tr>` +
+  $("v-table").innerHTML = `<tr><th>Name</th>${["L", "W", "H", "kg", "rate"].map(f => `<th>${VEH_LABELS[f]}</th>`).join("")}<th>AC unit</th>${["acW", "acH", "acD"].map(f => `<th>${VEH_LABELS[f]}</th>`).join("")}<th></th></tr>` +
     S.vehicles.map((v, i) => `<tr data-i="${i}">
       <td data-label="Name"><input type="text" data-f="name" value="${esc(v.name)}" aria-label="Name"></td>
       ${["L", "W", "H", "kg", "rate"].map(f => `<td data-label="${VEH_LABELS[f]}"><input type="number" step="any" min="0" data-f="${f}" value="${esc(v[f])}" ${f === "rate" ? 'placeholder="Optional"' : ""}></td>`).join("")}
+      <td data-label="AC unit"><select data-f="acType" aria-label="AC unit">${Object.entries(AC_TYPES).map(([k, t]) => `<option value="${k}" ${(v.acType || "none") === k ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+      ${["acW", "acH", "acD"].map(f => `<td data-label="${VEH_LABELS[f]}"><input type="number" step="any" min="0" data-f="${f}" value="${esc(v[f] ?? "")}" ${v.acType === "none" ? "disabled" : ""}></td>`).join("")}
       <td><button class="btn danger" data-del="${i}" title="Remove">✕</button></td></tr>`).join("");
-  $("g-top").value = S.gaps.top; $("g-door").value = S.gaps.door; $("g-side").value = S.gaps.side;
+  $("g-top").value = S.gaps.top; $("g-door").value = S.gaps.door; $("g-side").value = S.gaps.side; $("g-ac").value = S.gaps.ac;
 }
 
 // ============================================================
@@ -1084,6 +1287,7 @@ Viewer.prototype.show = function (data) {
   const r = this.root;
   this.draw2D();
   r.querySelector(".legend").innerHTML = data ? data.legend.map(l => `<span><span class="sw" style="background:${l.c}"></span>${esc(l.t)}</span>`).join("") +
+    (data.ac ? `<span><span class="sw" style="background:#8a96a8"></span>AC unit (${AC_TYPES[data.ac.type].toLowerCase()})</span>` : "") +
     (data.list.length >= MAX_DRAW || (data.list.length === 0) ? `<span>Too many boxes to draw individually — counts above are still exact.</span>` : "") : "";
   if (this.gl) this.gl.update(data);
 };
@@ -1107,6 +1311,11 @@ function drawTop(svg, d, W = 1000) {
   for (const p of d.list) { const k = p.x + "|" + p.y + "|" + p.l; const q = topmost.get(k); if (!q || p.z > q.z) topmost.set(k, p); }
   for (const p of [...topmost.values()].sort((a, b) => a.z - b.z))
     g += `<rect x="${pad + p.x * s}" y="${pad + (off + p.y) * s}" width="${p.l * s}" height="${p.w * s}" fill="${p.color}" fill-opacity=".85" stroke="${css("--card")}" stroke-width="1"/>`;
+  if (d.ac) {
+    const u = d.ac.unit;
+    g += `<rect x="${pad + u.x * s}" y="${pad + u.y * s}" width="${u.l * s}" height="${u.w * s}" fill="#8a96a8" fill-opacity=".55" stroke="${css("--text")}" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    g += `<text x="${pad + (u.x + u.l / 2) * s}" y="${pad + (u.y + u.w / 2) * s}" font-size="${fs - 2}" font-weight="700" text-anchor="middle" dominant-baseline="middle" fill="#fff" stroke="#0009" stroke-width="3" paint-order="stroke">AC</text>`;
+  }
   for (const l of d.labels) {
     if (l.section && l.x > 0) g += `<line x1="${pad + l.x * s}" x2="${pad + l.x * s}" y1="${pad}" y2="${pad + T.W * s}" stroke="${css("--text")}" stroke-width="2" stroke-dasharray="6 4"/>`;
     g += `<text x="${pad + (l.x + l.w / 2) * s}" y="${pad + (off + l.y + l.d / 2) * s}" font-size="${fs + 1}" font-weight="700" text-anchor="middle" dominant-baseline="middle" fill="#fff" stroke="#0009" stroke-width="3" paint-order="stroke">${esc(l.text)}</text>`;
@@ -1126,6 +1335,11 @@ function drawSide(svg, d, W = 1000) {
   // Only the side-wall row (y = 0) is visible from the side.
   for (const p of d.list) if (p.y === 0)
     g += `<rect x="${pad + p.x * s}" y="${base - (p.z + p.h) * s}" width="${p.l * s}" height="${p.h * s}" fill="${p.color}" fill-opacity=".85" stroke="${css("--card")}" stroke-width="1"/>`;
+  if (d.ac) {
+    const u = d.ac.unit;
+    g += `<rect x="${pad + u.x * s}" y="${base - (u.z + u.h) * s}" width="${u.l * s}" height="${u.h * s}" fill="#8a96a8" fill-opacity=".7" stroke="${css("--text")}" stroke-width="1.5"/>`;
+    g += `<text x="${pad + (u.x + u.l / 2) * s}" y="${base - (u.z + u.h / 2) * s}" font-size="${fs - 2}" font-weight="700" text-anchor="middle" dominant-baseline="middle" fill="#fff" stroke="#0009" stroke-width="3" paint-order="stroke">AC</text>`;
+  }
   if (d.gaps.top > 0) {
     const lim = top + d.gaps.top * s;
     g += `<line x1="${pad}" x2="${pad + T.L * s}" y1="${lim}" y2="${lim}" stroke="${css("--gap")}" stroke-width="2" stroke-dasharray="8 6"/>`;
@@ -1163,6 +1377,8 @@ Object.entries(sFields).forEach(([id, f]) => { $(id).value = S.single[f]; $(id).
 $("s-rot").checked = S.single.rot; $("s-up").checked = S.single.up; $("s-unit").value = S.single.unit;
 $("s-rot").addEventListener("change", e => { S.single.rot = e.target.checked; save(); renderSingle(); });
 $("s-up").addEventListener("change", e => { S.single.up = e.target.checked; save(); renderSingle(); });
+$("s-adjust").checked = S.single.adjust;
+$("s-adjust").addEventListener("change", e => { S.single.adjust = e.target.checked; save(); renderSingle(); });
 $("s-unit").addEventListener("change", e => {
   const k = TO_MM[S.single.unit] / TO_MM[e.target.value];
   ["L", "W", "H"].forEach(f => { if (S.single[f] !== "") S.single[f] = +(S.single[f] * k).toFixed(2); $("s-" + f).value = S.single[f]; });
@@ -1219,6 +1435,7 @@ $("m-add").addEventListener("click", () => {
   save(); renderMixInputs(); renderMix();
 });
 $("m-fill").addEventListener("change", e => { S.mix.fill = e.target.checked; save(); renderMix(); });
+$("m-adjust").addEventListener("change", e => { S.mix.adjust = e.target.checked; save(); renderMix(); });
 $("m-target").addEventListener("change", e => { S.mix.target = e.target.value; selPlan = 0; selTruck = 0; save(); renderMix(); });
 $("m-vehicles").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; S.mix.off[b.dataset.id] = !S.mix.off[b.dataset.id]; save(); renderMix(); });
 $("m-plans").addEventListener("click", e => { const r = e.target.closest("tr[data-plan]"); if (!r) return; selPlan = +r.dataset.plan; selTruck = 0; renderMix(); });
@@ -1228,8 +1445,9 @@ $("m-trucks").addEventListener("click", e => { const b = e.target.closest("butto
 $("v-table").addEventListener("input", e => {
   const tr = e.target.closest("tr[data-i]"), f = e.target.dataset.f; if (!tr || !f) return;
   const v = S.vehicles[+tr.dataset.i];
-  v[f] = f === "name" ? e.target.value : (e.target.value === "" ? "" : +e.target.value);
+  v[f] = f === "name" || f === "acType" ? e.target.value : (e.target.value === "" ? "" : +e.target.value);
   packCache.clear(); save();
+  if (f === "acType") renderSettings(); // enable/disable the AC size fields
 });
 $("v-table").addEventListener("click", e => {
   const d = e.target.closest("[data-del]"); if (!d) return;
@@ -1237,14 +1455,14 @@ $("v-table").addEventListener("click", e => {
   S.vehicles.splice(+d.dataset.del, 1); save(); renderSettings();
 });
 $("v-add").addEventListener("click", () => {
-  S.vehicles.push({ id: "v" + Date.now(), name: "New vehicle", L: 17, W: 6.5, H: 6.5, kg: 5000, rate: "" });
+  S.vehicles.push({ id: "v" + Date.now(), name: "New vehicle", L: 17, W: 6.5, H: 6.5, kg: 5000, rate: "", ...DEFAULT_AC["14"] });
   save(); renderSettings();
 });
 $("v-reset").addEventListener("click", () => {
   if (!confirm("Reset all vehicles to default dimensions?")) return;
   S.vehicles = clone(DEFAULT_VEHICLES); save(); renderSettings();
 });
-[["g-top", "top"], ["g-door", "door"], ["g-side", "side"]].forEach(([id, f]) =>
+[["g-top", "top"], ["g-door", "door"], ["g-side", "side"], ["g-ac", "ac"]].forEach(([id, f]) =>
   $(id).addEventListener("input", e => { S.gaps[f] = e.target.value; save(); }));
 
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setMode(S.mode));
@@ -1311,6 +1529,15 @@ function make3D(el, slider, label) {
     floor.rotation.x = -Math.PI / 2; floor.position.set(T.L * m / 2, 0, T.W * m / 2); group.add(floor);
     const cab = new THREE.Mesh(new THREE.PlaneGeometry(T.W * m, T.H * m), new THREE.MeshBasicMaterial({ color: cssColor("--accent"), transparent: true, opacity: .15, side: THREE.DoubleSide }));
     cab.rotation.y = Math.PI / 2; cab.position.set(0, T.H * m / 2, T.W * m / 2); group.add(cab);
+    if (d.ac) {
+      // Reefer evaporator: x = depth from the front wall, y = hangs down from the ceiling, z = across the width.
+      const u = d.ac.unit, geo = new THREE.BoxGeometry(u.l * m, u.h * m, u.w * m);
+      const unit = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x9aa4b2, roughness: .4, metalness: .3 }));
+      unit.position.set((u.x + u.l / 2) * m, (u.z + u.h / 2) * m, (u.y + u.w / 2) * m);
+      group.add(unit);
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x33404f }));
+      edges.position.copy(unit.position); group.add(edges);
+    }
 
     total = d.list.length;
     mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: .7 }), Math.max(total, 1));
