@@ -183,6 +183,7 @@
       <label class="check"><input type="checkbox" id="s-rot"> Allow 90° rotation on floor</label>
       <label class="check"><input type="checkbox" id="s-up"> This side up (no tipping)</label>
       <label class="check"><input type="checkbox" id="s-adjust"> Adjust anyhow — fit extra boxes into leftover gaps by moving and rotating them (fully supported, no overhang)</label>
+      <label class="check"><input type="checkbox" id="s-block"> Block AC airflow — also load into the top air gap and up to the AC unit, then adjust for the maximum boxes</label>
     </div>
   </section>
 
@@ -219,6 +220,7 @@
       <button class="btn ghost" id="m-add">+ Add box type</button>
       <label class="check"><input type="checkbox" id="m-fill"> Fill empty spaces with other box types (on top of stacks and in side gaps)</label>
       <label class="check"><input type="checkbox" id="m-adjust"> Adjust anyhow — fit remaining boxes into any leftover gap by moving and rotating them (fully supported, no overhang)</label>
+      <label class="check"><input type="checkbox" id="m-block"> Block AC airflow — also load into the top air gap and up to the AC unit, then adjust for the maximum boxes</label>
       <p class="note">Box types are loaded in list order, first type nearest the cabin.</p>
     </div>
     <div class="card">
@@ -252,8 +254,7 @@
   </section>
 </main>
 
-<!-- ================= MODE 3: VEHICLES ================= -->
-<!-- ================= MODE: PALLETS ================= -->
+<!-- ================= MODE 3: PALLETS ================= -->
 <main class="mode hidden" id="mode-pallet">
   <section class="noprint">
     <div class="card">
@@ -292,6 +293,7 @@
       <div id="p-stackrow" class="row2" style="margin-top:6px">
         <div><label for="p-maxS">Max stack levels</label><input type="number" id="p-maxS" step="1" min="1"></div>
       </div>
+      <label class="check"><input type="checkbox" id="p-block"> Block AC airflow — use the top air gap and the space up to the AC unit for taller loads</label>
     </div>
     <div class="card">
       <h2>Boxes on Pallet <span class="note">(optional)</span></h2>
@@ -327,6 +329,7 @@
   </section>
 </main>
 
+<!-- ================= MODE 4: VEHICLES ================= -->
 <main class="mode single-col hidden" id="mode-settings">
   <section>
     <div class="card">
@@ -349,6 +352,16 @@
         <div><label for="g-ac">Clearance around AC unit</label><input type="number" id="g-ac" step="any" min="0"></div>
       </div>
       <p class="note">Keep at least 10 cm (4 in) above the load for air circulation. Do not load above the red load line. Keep the AC unit's air outlet and return clear — no cargo within the AC clearance.</p>
+    </div>
+    <div class="card">
+      <h2>Share settings between devices</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" id="v-export">Export settings</button>
+        <button class="btn ghost" id="v-import">Import settings</button>
+        <input type="file" id="v-file" accept=".json,application/json" class="hidden">
+      </div>
+      <p class="note">Export saves vehicles, AC units, freight rates and clearances to a file. Import that file on another phone or computer to use the same settings.</p>
+      <div id="v-msg"></div>
     </div>
   </section>
 </main>
@@ -377,7 +390,7 @@ const DEFAULT_AC = {
   "24": { acType: "wall",    acW: 122.5, acH: 55,   acD: 29 }
 };
 DEFAULT_VEHICLES.forEach(v => Object.assign(v, DEFAULT_AC[v.id]));
-const AC_TYPES = { none: "None", ceiling: "Ceiling (front)", wall: "Front wall" };
+const AC_TYPES = { none: "None", ceiling: "Ceiling", wall: "Front wall" };
 const PALETTE = ["#3b82c4", "#e08a2e", "#3aa76d", "#c2527a", "#8a6fd1", "#c9a227", "#2bb3b3", "#d0603a"];
 const TO_MM = { mm: 1, cm: 10, in: 25.4, ft: 304.8 };
 const UNIT_NAME = { mm: "mm", cm: "cm", in: "in", ft: "ft" };
@@ -396,10 +409,10 @@ const DEFAULT_STATE = {
   mode: "single",
   vehicles: clone(DEFAULT_VEHICLES),
   gaps: { top: 10, door: 0, side: 0, ac: 10 },
-  single: { veh: "20", unit: "cm", L: 60, W: 40, H: 30, wt: "", maxL: "", rot: true, up: true, adjust: false },
-  pallet: { veh: "20", unit: "cm", preset: "120x100", L: 120, W: 100, base: 15, H: 150, wt: "", rot: true, stack: false, maxS: 2, bL: "", bW: "", bH: "", maxLoad: "" },
+  single: { veh: "20", unit: "cm", L: 60, W: 40, H: 30, wt: "", maxL: "", rot: true, up: true, adjust: false, block: false },
+  pallet: { veh: "20", unit: "cm", preset: "120x100", L: 120, W: 100, base: 15, H: 150, wt: "", rot: true, stack: false, maxS: 2, bL: "", bW: "", bH: "", maxLoad: "", block: false },
   mix: {
-    unit: "cm", off: {}, fill: true, adjust: false, target: "auto",
+    unit: "cm", off: {}, fill: true, adjust: false, block: false, target: "auto",
     items: [
       { name: "Box A", L: 60, W: 40, H: 30, qty: 300, wt: "", maxL: "", up: true, rot: true },
       { name: "Box B", L: 50, W: 30, H: 25, qty: 200, wt: "", maxL: "", up: true, rot: true }
@@ -424,17 +437,18 @@ function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) {} }, 300);
 }
-function truckOf(v) {
+// blockAir: load into the top air gap and right up to the AC unit (no airflow clearances); the unit itself stays solid.
+function truckOf(v, blockAir = false) {
   const T = { L: v.L * 304.8, W: v.W * 304.8, H: v.H * 304.8 };
-  const g = { top: (+S.gaps.top || 0) * 10, door: (+S.gaps.door || 0) * 10, side: (+S.gaps.side || 0) * 10 };
+  const g = { top: blockAir ? 0 : (+S.gaps.top || 0) * 10, door: (+S.gaps.door || 0) * 10, side: (+S.gaps.side || 0) * 10, blocked: blockAir };
   const U = { L: Math.floor(T.L - g.door) + FIT_TOL, W: Math.floor(T.W - 2 * g.side) + FIT_TOL, H: Math.floor(T.H - g.top) + FIT_TOL };
-  return { T, U, gaps: g, ac: acOf(v, T, g), valid: T.L > 0 && T.W > 0 && T.H > 0 && U.L > 0 && U.W > 0 && U.H > 0 };
+  return { T, U, gaps: g, ac: acOf(v, T, g, blockAir ? 0 : (+S.gaps.ac || 0) * 10), valid: T.L > 0 && T.W > 0 && T.H > 0 && U.L > 0 && U.W > 0 && U.H > 0 };
 }
 // The AC unit as a box in truck coordinates, plus the keep-out zone around it in usable-area coordinates
 // (x from the front wall, y from the first side gap). Cargo under the zone must stay below ob.zTop.
-function acOf(v, T, g) {
+function acOf(v, T, g, clr) {
   if (!v.acType || v.acType === "none") return null;
-  const W = (+v.acW || 0) * 10, H = (+v.acH || 0) * 10, D = (+v.acD || 0) * 10, clr = (+S.gaps.ac || 0) * 10;
+  const W = (+v.acW || 0) * 10, H = (+v.acH || 0) * 10, D = (+v.acD || 0) * 10;
   if (!(W > 0 && H > 0 && D > 0)) return null;
   const unit = { x: 0, y: (T.W - W) / 2, z: T.H - H, l: D, w: W, h: H };
   const ob = { x1: 0, x2: D + clr, y1: unit.y - clr - g.side, y2: unit.y + W + clr - g.side, zTop: T.H - H - clr };
@@ -457,7 +471,11 @@ function acStep(ac, opt, what, x0 = 0) {
   const allowed = Math.max(0, Math.floor((ac.ob.zTop + FIT_TOL) / opt.h));
   if (allowed >= opt.layers) return "";
   const o = ac.ob, g = ac.unit;
-  return `<span class="sw" style="background:#8a96a8"></span><b>Under the AC unit</b> (${AC_TYPES[ac.type].toLowerCase()}, ${cm(g.w)} wide × ${cm(g.h)} deep from ceiling, reaching ${cm(g.l)} from the front wall): within front ${cm(Math.max(o.x1, x0))}–${cm(o.x2)} and side ${cm(Math.max(0, o.y1))}–${cm(o.y2)}, stack ${allowed === 0 ? "<b>no</b> " + what : `only <b>${allowed}</b> layer${allowed > 1 ? "s" : ""}`} (keep ${cm(ac.clr)} clear of the unit for airflow).`;
+  return `<span class="sw" style="background:#8a96a8"></span><b>Under the AC unit</b> (${AC_TYPES[ac.type].toLowerCase()}, ${cm(g.w)} wide × ${cm(g.h)} deep from ceiling, reaching ${cm(g.l)} from the front wall): within front ${cm(Math.max(o.x1, x0))}–${cm(o.x2)} and side ${cm(Math.max(0, o.y1))}–${cm(o.y2)}, stack ${allowed === 0 ? "<b>no</b> " + what : `only <b>${allowed}</b> layer${allowed > 1 ? "s" : ""}`} ${ac.clr > 0 ? `(keep ${cm(ac.clr)} clear of the unit for airflow)` : "(right up to the unit — airflow blocked)"}.`;
+}
+// Closing instruction about the air gap above the load.
+function topGapText(g) {
+  return g.blocked ? "Loaded up to the ceiling — <b>airflow blocked</b>; use only for pre-cooled cargo on short trips." : `Maintain a minimum ${cm(g.top)} air gap at the top.`;
 }
 // Boxes lost under the AC for a floor pack stacked `layers` high (section starting at x0), counted per stack without enumerating.
 function acLoss(pack, layers, h, x0, ac) {
@@ -715,10 +733,10 @@ function extraSteps(extras, conv, nameOf) {
 // ============================================================
 function singleBox() {
   const s = S.single, u = TO_MM[s.unit];
-  return { L: toMM(s.L, s.unit), W: toMM(s.W, s.unit), H: toMM(s.H, s.unit), up: s.up, rot: s.rot, maxL: parseInt(s.maxL) || 0, wt: +s.wt || 0, adjust: !!s.adjust };
+  return { L: toMM(s.L, s.unit), W: toMM(s.W, s.unit), H: toMM(s.H, s.unit), up: s.up, rot: s.rot, maxL: parseInt(s.maxL) || 0, wt: +s.wt || 0, adjust: !!s.adjust, block: !!s.block };
 }
 function calcSingle(v, box) {
-  const tr = truckOf(v);
+  const tr = truckOf(v, !!box.block);
   const res = { v, ...tr, box, options: [], ok: false };
   if (!(box.L > 0 && box.W > 0 && box.H > 0)) { res.error = "Enter all box dimensions."; return res; }
   if (!tr.valid) { res.error = `Invalid dimensions for ${v.name}. Check the Vehicles tab.`; return res; }
@@ -737,7 +755,7 @@ function calcSingle(v, box) {
   res.final = res.base = Math.min(best.total, res.weightLimit);
   if (res.final === 0) { res.error = `Weight per unit (${fmt(box.wt)} kg) exceeds the payload of ${v.name} (${fmt(v.kg)} kg).`; return res; }
   res.extras = []; res.extra = 0;
-  if (box.adjust && res.base === best.total) {
+  if ((box.adjust || (box.block && !box.noFill)) && res.base === best.total) {
     const C = { x: 0, y: 0, z: 0, l: tr.U.L, w: tr.U.W, h: tr.U.H };
     // Each floor block stacked full height is occupied; it can carry extras only if no stack in it was cut short by the AC.
     const occ = best.pack.blocks.map(bl => ({ x: bl.x, y: bl.y, z: 0, l: bl.cx * bl.pa, w: bl.cy * bl.pb, h: best.layers * best.h, solid: acLoss({ blocks: [bl] }, best.layers, best.h, 0, tr.ac) === 0 }));
@@ -781,7 +799,12 @@ function renderSingle() {
       ${box.wt > 0 ? `<div class="stat"><div class="v">${fmt(res.final * box.wt)} kg</div><div class="k">Total weight</div></div>` : ""}
       ${hasRate(v) ? `<div class="stat"><div class="v">₹${fmt(v.rate / res.final, 2)}</div><div class="k">Freight per box</div></div>` : ""}`;
     const m = [];
-    if (box.adjust) m.push(res.extra ? `<div class="msg ok">Adjust anyhow: <b>${fmt(res.extra)} extra ${plural(res.extra, "box", "boxes")}</b> fit into leftover gaps (shown in purple).</div>`
+    if (box.block) {
+      const normal = calcSingle(v, { ...box, block: false });
+      const gain = res.final - (normal.ok ? normal.final : 0);
+      m.push(`<div class="msg"><b>AC airflow blocked:</b> top air gap and AC clearance used for cargo — <b>${gain > 0 ? `+${fmt(gain)} boxes` : "no extra boxes"}</b> vs normal loading (${fmt(normal.ok ? normal.final : 0)}). Cold air cannot circulate, so cargo may warm up; use only for pre-cooled cargo on short trips.</div>`);
+    }
+    if (box.adjust || box.block) m.push(res.extra ? `<div class="msg ok">Adjust anyhow: <b>${fmt(res.extra)} extra ${plural(res.extra, "box", "boxes")}</b> fit into leftover gaps (shown in purple).</div>`
       : `<div class="msg">Adjust anyhow: ${res.base < b.total ? "payload limit already reached." : "no leftover gap is large enough for another box."}</div>`);
     if (res.base < b.total) m.push(`<div class="msg">Space allows ${fmt(b.total)} boxes; payload limit (${fmt(v.kg)} kg) caps the load at <b>${fmt(res.final)}</b>.</div>`);
     if (b.up !== 2) m.push(`<div class="msg">Best fit requires boxes on their side (${SIDE_NAME[b.up]} vertical). Enable "This side up" if not permitted.</div>`);
@@ -792,7 +815,7 @@ function renderSingle() {
     const steps = [`Start at the front wall (cabin side). ${res.gaps.side > 0 ? `Leave ${cm(res.gaps.side)} on each side.` : "Keep boxes flush against one side wall."}`];
     if (b.up !== 2) steps.push(`Place each box with its <b>${SIDE_NAME[b.up]} (${conv(b.h)})</b> vertical.`);
     b.pack.blocks.forEach((bl, n) => steps.push(`<span class="sw" style="background:${bl.o ? PALETTE[1] : PALETTE[0]}"></span><b>Block ${n + 1}</b> (from front ${cm(bl.x)}–${cm(bl.x + bl.cx * bl.pa)}, from side ${cm(bl.y)}–${cm(bl.y + bl.cy * bl.pb)}): ${blockText(bl, conv)} per layer.`));
-    steps.push(`Repeat for <b>${b.layers}</b> layers (${conv(b.h)} each). Maintain a minimum ${cm(res.gaps.top)} air gap at the top.`);
+    steps.push(`Repeat for <b>${b.layers}</b> layers (${conv(b.h)} each). ${topGapText(res.gaps)}`);
     const acS = acStep(res.ac, b, "boxes");
     if (acS) steps.push(acS);
     steps.push(...extraSteps(res.extras, conv));
@@ -844,7 +867,7 @@ function renderSingle() {
 // ============================================================
 // Pallet footprint and loaded height for vehicle v; builds the pallet from boxes when box size is given.
 function palletSpec(v) {
-  const p = S.pallet, u = TO_MM[p.unit], tr = truckOf(v);
+  const p = S.pallet, u = TO_MM[p.unit], tr = truckOf(v, !!p.block);
   const spec = { L: toMM(p.L, p.unit), W: toMM(p.W, p.unit), base: toMM(p.base || 0, p.unit), H: toMM(p.H, p.unit), boxes: 0, auto: false };
   const b = { L: toMM(p.bL, p.unit), W: toMM(p.bW, p.unit), H: toMM(p.bH, p.unit) };
   if (b.L > 0 && b.W > 0 && b.H > 0) {
@@ -863,9 +886,10 @@ function calcPallet(v) {
     return { v, ok: false, spec, error: `Box (${conv(spec.box.L)} × ${conv(spec.box.W)}) is larger than the pallet deck (${conv(spec.L)} × ${conv(spec.W)}).` };
   if (spec.auto && spec.boxLayers === 0)
     return { v, ok: false, spec, error: +p.maxLoad > 0 ? `Max load height (${conv(+p.maxLoad * TO_MM[p.unit])}) is lower than the box height (${conv(spec.box.H)}).` : `Box height (${conv(spec.box.H)}) exceeds the usable height of ${v.name}.` };
-  const r = calcSingle(v, { L: spec.L, W: spec.W, H: spec.H, up: true, rot: p.rot, maxL: p.stack ? Math.max(1, parseInt(p.maxS) || 1) : 1, wt: +p.wt || 0 });
+  // Pallets are never shuffled into gaps (forklift access, no stacking unless Stackable), so no adjust fill here.
+  const r = calcSingle(v, { L: spec.L, W: spec.W, H: spec.H, up: true, rot: p.rot, maxL: p.stack ? Math.max(1, parseInt(p.maxS) || 1) : 1, wt: +p.wt || 0, block: !!p.block, noFill: true });
   if (!r.ok && r.error.startsWith("Box does not fit")) {
-    const tr = truckOf(v);
+    const tr = truckOf(v, !!p.block);
     if (tr.valid && spec.H > tr.U.H) r.error = `Loaded pallet height (${conv(spec.H)}) exceeds the usable height of ${v.name} (${conv(tr.U.H)}, after the top air gap).`;
     else if (tr.valid) r.error = `Pallet (${conv(spec.L)} × ${conv(spec.W)}) does not fit on the floor of ${v.name}.`;
   }
@@ -902,6 +926,13 @@ function renderPallet() {
       ${+p.wt > 0 ? `<div class="stat"><div class="v">${fmt(res.final * p.wt)} kg</div><div class="k">Total weight</div></div>` : ""}
       ${hasRate(v) ? `<div class="stat"><div class="v">₹${fmt(v.rate / res.final, 0)}</div><div class="k">Freight per pallet</div></div>` : ""}`;
     const m = [];
+    if (p.block) {
+      const saved = p.block; p.block = false;
+      const normal = calcPallet(v);
+      p.block = saved;
+      const gain = res.final - (normal.ok ? normal.final : 0);
+      m.push(`<div class="msg"><b>AC airflow blocked:</b> top air gap and AC clearance used — <b>${gain > 0 ? `+${fmt(gain)} pallets` : "no extra pallets"}</b>${spec.auto && normal.ok ? ` (${fmt(res.final * spec.boxes - normal.final * normal.spec.boxes)} more boxes)` : ""} vs normal loading. Cold air cannot circulate; use only for pre-cooled cargo on short trips.</div>`);
+    }
     if (res.final < b.total) m.push(`<div class="msg">Space allows ${fmt(b.total)} pallets; payload limit (${fmt(v.kg)} kg) caps the load at <b>${fmt(res.final)}</b>.</div>`);
     if (p.stack && b.layers < (parseInt(p.maxS) || 1)) m.push(`<div class="msg">Vehicle height allows only ${b.layers} stack level${b.layers > 1 ? "s" : ""}.</div>`);
     const usedL = Math.max(...b.pack.blocks.map(bl => bl.x + bl.cx * bl.pa)), usedW = Math.max(...b.pack.blocks.map(bl => bl.y + bl.cy * bl.pb));
@@ -916,7 +947,7 @@ function renderPallet() {
     if (b.layers > 1) steps.push(`Stack <b>${b.layers}</b> levels (${conv(b.h)} each).`);
     const acS = acStep(res.ac, b, "pallets");
     if (acS) steps.push(acS);
-    steps.push(`Maintain a minimum ${cm(res.gaps.top)} air gap at the top. Total: ${fmt(b.perLayer)} × ${b.layers}${b.acLoss ? ` − ${fmt(b.acLoss)} under AC unit` : ""} = <b>${fmt(b.total)}</b> pallets${res.final < b.total ? ` (stop at ${fmt(res.final)} — payload limit)` : ""}.`);
+    steps.push(`${topGapText(res.gaps)} Total: ${fmt(b.perLayer)} × ${b.layers}${b.acLoss ? ` − ${fmt(b.acLoss)} under AC unit` : ""} = <b>${fmt(b.total)}</b> pallets${res.final < b.total ? ` (stop at ${fmt(res.final)} — payload limit)` : ""}.`);
     $("p-steps").innerHTML = steps.map(s => `<li>${s}</li>`).join("");
 
     viewers.pallet.show({
@@ -977,7 +1008,7 @@ function shortestSection(t, n, R, U, x0 = 0, ac = null) {
 }
 // Fill as many trucks of vehicle v as needed for the given quantities.
 function packTrucks(v, types, qtys) {
-  const tr = truckOf(v);
+  const tr = truckOf(v, !!S.mix.block);
   if (!tr.valid) return { error: "invalid dimensions" };
   const unfit = types.filter(t => qtys[t.i] > 0 && (capacity(t, tr.U.L, tr.U, 0, tr.ac) === 0 || (t.wt > 0 && +v.kg > 0 && t.wt > +v.kg)));
   if (unfit.length) return { error: unfit.map(t => t.name).join(", ") + " does not fit" };
@@ -1001,7 +1032,7 @@ function packTrucks(v, types, qtys) {
     const fills = S.mix.fill ? fillSpaces(v, tr, sections, types, rem, wt) : [];
     fills.forEach(f => { rem[f.t.i] -= f.n; wt += f.n * f.t.wt; });
     let extras = [];
-    if (S.mix.adjust && types.some(t => rem[t.i] > 0)) {
+    if ((S.mix.adjust || S.mix.block) && types.some(t => rem[t.i] > 0)) {
       const C = { x: 0, y: 0, z: 0, l: tr.U.L, w: tr.U.W, h: tr.U.H }, occ = [];
       // Section blocks are occupied to full stack height; a block can carry extras only if every stack in it is complete.
       sections.forEach(s => s.pack.blocks.forEach(bl => {
@@ -1139,6 +1170,7 @@ function renderMix() {
     else m.push(`<div class="msg"><b>✘ Does not fit in any single vehicle.</b> Send: <b>${esc(best.name)}</b>.</div>`);
     m.push(`<div class="msg ok">Recommended: <b>${esc(best.name)}</b>${best.cost !== null ? ` — ₹${fmt(best.cost)}` : ""}.${allCost ? "" : " Freight rates not set; ranked by fewest and smallest vehicles."}</div>`);
   }
+  if (S.mix.block) m.push(`<div class="msg"><b>AC airflow blocked:</b> top air gap and AC clearance used for cargo, with extra boxes adjusted in. Cold air cannot circulate, so cargo may warm up; use only for pre-cooled cargo on short trips.</div>`);
   if (skipped.length) m.push(`<div class="msg">Not included (missing dimensions or quantity): <b>${skipped.map(esc).join(", ")}</b>.</div>`);
   if (failures.length) m.push(`<div class="msg">Not feasible — ${failures.map(esc).join("; ")}.</div>`);
   if (noVehicles) m.push(`<div class="msg">Select at least one vehicle under Allowed vehicles.</div>`);
@@ -1196,7 +1228,7 @@ function renderTruck() {
     list = list.concat(f.list);
   });
   t.extras.forEach(e => { steps.push(...extraSteps([e], convFor(e.t.unit), x => x.name)); list = list.concat(e.list); });
-  steps.push(`Maintain a minimum ${cm(t.tr.gaps.top)} air gap at the top. Secure open spaces with dunnage or airbags.`);
+  steps.push(`${topGapText(t.tr.gaps)} Secure open spaces with dunnage or airbags.`);
   $("m-steps").innerHTML = steps.map(s => `<li>${s}</li>`).join("");
   const types = [...new Map([...t.sections, ...t.fills, ...t.extras].map(s => [s.t.i, s.t])).values()];
   viewers.mix.show({ T: t.tr.T, gaps: t.tr.gaps, ac: t.tr.ac, list, labels,
@@ -1206,6 +1238,7 @@ function renderTruck() {
 function renderMixInputs(full = true) {
   $("m-fill").checked = S.mix.fill;
   $("m-adjust").checked = !!S.mix.adjust;
+  $("m-block").checked = !!S.mix.block;
   if (S.mix.target !== "auto" && !S.vehicles.some(v => v.id === S.mix.target)) S.mix.target = "auto";
   $("m-target").innerHTML = `<option value="auto">Auto — recommend best plan</option>` +
     S.vehicles.map(v => `<option value="${esc(v.id)}">${esc(v.name)} — check this vehicle</option>`).join("");
@@ -1373,12 +1406,17 @@ document.addEventListener("click", e => {
 
 // Single mode inputs
 const sFields = { "s-L": "L", "s-W": "W", "s-H": "H", "s-wt": "wt", "s-maxL": "maxL" };
-Object.entries(sFields).forEach(([id, f]) => { $(id).value = S.single[f]; $(id).addEventListener("input", e => { S.single[f] = e.target.value; save(); renderSingle(); }); });
+// Typing recalculates after a short pause so large layouts don't lag each keystroke.
+const debounce = (fn, ms = 150) => { let t; return () => { clearTimeout(t); t = setTimeout(fn, ms); }; };
+const scheduleSingle = debounce(() => renderSingle()), schedulePallet = debounce(() => renderPallet());
+Object.entries(sFields).forEach(([id, f]) => { $(id).value = S.single[f]; $(id).addEventListener("input", e => { S.single[f] = e.target.value; save(); scheduleSingle(); }); });
 $("s-rot").checked = S.single.rot; $("s-up").checked = S.single.up; $("s-unit").value = S.single.unit;
 $("s-rot").addEventListener("change", e => { S.single.rot = e.target.checked; save(); renderSingle(); });
 $("s-up").addEventListener("change", e => { S.single.up = e.target.checked; save(); renderSingle(); });
 $("s-adjust").checked = S.single.adjust;
 $("s-adjust").addEventListener("change", e => { S.single.adjust = e.target.checked; save(); renderSingle(); });
+$("s-block").checked = !!S.single.block;
+$("s-block").addEventListener("change", e => { S.single.block = e.target.checked; save(); renderSingle(); });
 $("s-unit").addEventListener("change", e => {
   const k = TO_MM[S.single.unit] / TO_MM[e.target.value];
   ["L", "W", "H"].forEach(f => { if (S.single[f] !== "") S.single[f] = +(S.single[f] * k).toFixed(2); $("s-" + f).value = S.single[f]; });
@@ -1394,13 +1432,15 @@ pFields.forEach(f => {
   $("p-" + f).addEventListener("input", e => {
     S.pallet[f] = e.target.value;
     if (f === "L" || f === "W") { S.pallet.preset = "custom"; $("p-preset").value = "custom"; }
-    save(); renderPallet();
+    save(); schedulePallet();
   });
 });
 $("p-unit").value = S.pallet.unit; $("p-preset").value = S.pallet.preset;
 $("p-rot").checked = S.pallet.rot; $("p-stack").checked = S.pallet.stack;
 $("p-rot").addEventListener("change", e => { S.pallet.rot = e.target.checked; save(); renderPallet(); });
 $("p-stack").addEventListener("change", e => { S.pallet.stack = e.target.checked; save(); renderPallet(); });
+$("p-block").checked = !!S.pallet.block;
+$("p-block").addEventListener("change", e => { S.pallet.block = e.target.checked; save(); renderPallet(); });
 $("p-preset").addEventListener("change", e => {
   S.pallet.preset = e.target.value;
   if (e.target.value !== "custom") {
@@ -1436,6 +1476,7 @@ $("m-add").addEventListener("click", () => {
 });
 $("m-fill").addEventListener("change", e => { S.mix.fill = e.target.checked; save(); renderMix(); });
 $("m-adjust").addEventListener("change", e => { S.mix.adjust = e.target.checked; save(); renderMix(); });
+$("m-block").addEventListener("change", e => { S.mix.block = e.target.checked; save(); renderMix(); });
 $("m-target").addEventListener("change", e => { S.mix.target = e.target.value; selPlan = 0; selTruck = 0; save(); renderMix(); });
 $("m-vehicles").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; S.mix.off[b.dataset.id] = !S.mix.off[b.dataset.id]; save(); renderMix(); });
 $("m-plans").addEventListener("click", e => { const r = e.target.closest("tr[data-plan]"); if (!r) return; selPlan = +r.dataset.plan; selTruck = 0; renderMix(); });
@@ -1461,6 +1502,35 @@ $("v-add").addEventListener("click", () => {
 $("v-reset").addEventListener("click", () => {
   if (!confirm("Reset all vehicles to default dimensions?")) return;
   S.vehicles = clone(DEFAULT_VEHICLES); save(); renderSettings();
+});
+$("v-export").addEventListener("click", () => {
+  const data = JSON.stringify({ app: "reefer-load-calculator", version: 1, vehicles: S.vehicles, gaps: S.gaps }, null, 2);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
+  a.download = "reefer-settings.json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  $("v-msg").innerHTML = `<div class="msg ok">Settings exported (reefer-settings.json, ${S.vehicles.length} vehicles).</div>`;
+});
+$("v-import").addEventListener("click", () => $("v-file").click());
+$("v-file").addEventListener("change", e => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  file.text().then(txt => {
+    const d = JSON.parse(txt);
+    const num = x => x === "" || (isFinite(+x) && +x >= 0);
+    const ok = d && Array.isArray(d.vehicles) && d.vehicles.length && d.vehicles.every(v => v && typeof v.name === "string" && +v.L > 0 && +v.W > 0 && +v.H > 0 && num(v.kg ?? "") && num(v.rate ?? ""));
+    if (!ok) throw new Error("not a settings file");
+    if (!confirm(`Replace your ${S.vehicles.length} vehicles with ${d.vehicles.length} from "${file.name}"?`)) return;
+    const ids = new Set();
+    S.vehicles = d.vehicles.map((v, i) => ({
+      id: (() => { let id = String(v.id || ""); if (!id || ids.has(id)) id = "v" + Date.now() + "_" + i; ids.add(id); return id; })(), name: v.name, L: +v.L, W: +v.W, H: +v.H, kg: v.kg === "" ? "" : +(v.kg || 0), rate: v.rate ?? "",
+      ...(v.acType === undefined ? DEFAULT_AC[v.id] || { acType: "none", acW: "", acH: "", acD: "" } : { acType: AC_TYPES[v.acType] ? v.acType : "none", acW: v.acW, acH: v.acH, acD: v.acD })
+    }));
+    if (d.gaps) S.gaps = { ...DEFAULT_STATE.gaps, ...d.gaps };
+    packCache.clear(); save(); renderSettings();
+    $("v-msg").innerHTML = `<div class="msg ok">Imported ${S.vehicles.length} vehicles from ${esc(file.name)}.</div>`;
+  }).catch(err => { $("v-msg").innerHTML = `<div class="msg">Could not import ${esc(file.name)}: ${esc(err.message)}.</div>`; });
 });
 [["g-top", "top"], ["g-door", "door"], ["g-side", "side"], ["g-ac", "ac"]].forEach(([id, f]) =>
   $(id).addEventListener("input", e => { S.gaps[f] = e.target.value; save(); }));
@@ -1502,7 +1572,9 @@ function make3D(el, slider, label) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 200);
   const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
+  // Draw only when something changes; a permanent animation loop per view drains phone batteries.
+  const render = () => renderer.render(scene, camera);
+  controls.addEventListener("change", render);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x667788, 1.6));
   const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(5, 10, 7); scene.add(sun);
   const cssColor = v => new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue(v).trim());
@@ -1513,6 +1585,7 @@ function make3D(el, slider, label) {
     const w = el.clientWidth, h = el.clientHeight;
     if (!w) return;
     renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+    controls.update(); render();
   }
   new ResizeObserver(resize).observe(el);
 
@@ -1520,7 +1593,7 @@ function make3D(el, slider, label) {
     scene.remove(group);
     group.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
     group = new THREE.Group(); scene.add(group); mesh = null;
-    if (!d) { slider.max = 0; label.textContent = ""; return; }
+    if (!d) { slider.max = 0; label.textContent = ""; render(); return; }
     const m = 0.001, T = d.T;
     // x = truck length (cabin at x = 0), y = up, z = width
     const body = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(T.L * m, T.H * m, T.W * m)), new THREE.LineBasicMaterial({ color: cssColor("--truck") }));
@@ -1565,9 +1638,9 @@ function make3D(el, slider, label) {
     if (!mesh) return;
     mesh.count = +slider.value;
     label.textContent = `${slider.value} / ${total}`;
+    render();
   }
   slider.addEventListener("input", showStep);
-  (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
   return { update, resize };
 }
 window.__onThree(make3D);
