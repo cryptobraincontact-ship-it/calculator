@@ -1,0 +1,1649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reefer Load Calculator</title>
+<style>
+  :root {
+    --bg: #f4f6f9; --card: #ffffff; --text: #1d2433; --muted: #5f6b7d; --line: #dce2ea;
+    --accent: #1565c0; --accent-soft: #e3eefb; --ok: #1b7f4b; --warn: #b3541e;
+    --truck: #8a96a8; --gap: #d9534f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161d; --card: #1b212b; --text: #e6eaf0; --muted: #9aa6b8; --line: #2d3644;
+      --accent: #5aa2ec; --accent-soft: #1d2f45; --ok: #4cc38a; --warn: #f0a060;
+      --truck: #6f7c90; --gap: #f07470;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.45; }
+  header { padding: 18px 16px 4px; max-width: 1240px; margin: 0 auto; }
+  header h1 { margin: 0; font-size: 1.5rem; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: .92rem; }
+  nav.modes { max-width: 1240px; margin: 10px auto 0; padding: 0 16px; display: flex; gap: 6px; flex-wrap: wrap; }
+  nav.modes button { padding: 9px 16px; border-radius: 9px 9px 0 0; border: 1px solid var(--line); border-bottom: none; background: var(--bg); color: var(--muted); cursor: pointer; font-weight: 600; font-size: .92rem; }
+  nav.modes button.active { background: var(--card); color: var(--accent); }
+  .mode { max-width: 1240px; margin: 0 auto; padding: 12px 16px 40px; display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 16px; align-items: start; border-top: 1px solid var(--line); }
+  .mode.single-col { grid-template-columns: minmax(0, 1fr); }
+  @media (max-width: 900px) { .mode { grid-template-columns: minmax(0, 1fr); } }
+  .hidden { display: none !important; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-width: 0; }
+  .card + .card { margin-top: 16px; }
+  h2 { font-size: 1.02rem; margin: 0 0 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips button { padding: 8px 12px; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px; cursor: pointer; font-weight: 600; font-size: .9rem; }
+  .chips button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chips button small { font-weight: 400; opacity: .85; }
+  .row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 3px; }
+  input[type=number], input[type=text], select { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--text); font-size: .95rem; font-family: inherit; }
+  input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+  .check { display: flex; gap: 8px; align-items: flex-start; font-size: .86rem; margin-top: 8px; color: var(--text); }
+  .check input { margin-top: 3px; }
+  .note { font-size: .78rem; color: var(--muted); margin-top: 6px; }
+  a { color: var(--accent); }
+  .unitline { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .unitline select { width: auto; padding: 4px 6px; font-size: .85rem; }
+  .btn { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; font-weight: 600; font-size: .88rem; font-family: inherit; }
+  .btn.ghost { background: transparent; color: var(--accent); }
+  .btn.danger { border-color: var(--gap); color: var(--gap); background: transparent; padding: 4px 9px; }
+  .head-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .head-row h2 { margin: 0; }
+  .big { display: flex; flex-wrap: wrap; gap: 12px; }
+  .stat { flex: 1 1 130px; background: var(--accent-soft); border-radius: 9px; padding: 10px 12px; }
+  .stat .v { font-size: 1.5rem; font-weight: 700; }
+  .stat .k { font-size: .78rem; color: var(--muted); }
+  .stat.main .v { font-size: 2.1rem; color: var(--accent); }
+  .msg { padding: 8px 10px; border-radius: 7px; font-size: .88rem; margin-top: 10px; border-left: 4px solid var(--warn); background: var(--accent-soft); }
+  .msg.ok { border-left-color: var(--ok); }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: .87rem; margin-top: 6px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  td.num, th.num { text-align: right; }
+  tr.best td { font-weight: 700; color: var(--ok); }
+  tr.click { cursor: pointer; }
+  tr.click:hover td { background: var(--accent-soft); }
+  tr.sel td { background: var(--accent-soft); }
+  .badge { display: inline-block; font-size: .7rem; padding: 1px 7px; border-radius: 10px; background: var(--ok); color: #fff; margin-left: 6px; vertical-align: 1px; }
+  table.edit input { padding: 5px 6px; min-width: 64px; }
+  table.edit td { padding: 4px; }
+  ol.steps { padding-left: 20px; margin: 6px 0; }
+  ol.steps li { margin-bottom: 8px; }
+  ol.steps ul { margin: 4px 0 0; padding-left: 18px; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .82rem; color: var(--muted); margin-top: 8px; }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+  svg { width: 100%; height: auto; display: block; }
+  .view3d { width: 100%; border-radius: 8px; background: var(--bg); position: relative; overflow: hidden; touch-action: none; }
+  .view3d .fallback { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: .9rem; text-align: center; padding: 20px; }
+  .slider { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: .85rem; }
+  .slider input { flex: 1; min-width: 0; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .tabs button { padding: 6px 12px; border-radius: 16px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; font-size: .85rem; }
+  .tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .item { border: 1px solid var(--line); border-left: 5px solid var(--c); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+  .item .top { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .item .top input { flex: 1; }
+  .print-title { display: none; }
+  footer { max-width: 1240px; margin: 0 auto; padding: 0 16px 30px; font-size: .78rem; color: var(--muted); }
+  .view3d { height: clamp(260px, 55vw, 420px); }
+
+  /* ---------- Tablet ---------- */
+  @media (max-width: 1100px) and (min-width: 901px) {
+    .mode { grid-template-columns: 330px minmax(0, 1fr); }
+  }
+  /* ---------- Phone ---------- */
+  @media (max-width: 640px) {
+    header { padding: 14px 12px 2px; }
+    header h1 { font-size: 1.25rem; }
+    header p { font-size: .82rem; }
+    nav.modes { padding: 0 12px; gap: 4px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    nav.modes button { flex: 1 0 auto; padding: 9px 10px; font-size: .84rem; white-space: nowrap; }
+    .mode { padding: 10px 12px 28px; gap: 12px; }
+    .card { padding: 12px; }
+    .card + .card { margin-top: 12px; }
+    input[type=number], input[type=text], select { font-size: 16px; } /* prevents iOS zoom on focus */
+    .row, .row2 { gap: 6px; }
+    .stat { flex: 1 1 calc(50% - 6px); padding: 8px 10px; }
+    .stat.main { flex-basis: 100%; }
+    .stat .v { font-size: 1.25rem; }
+    .stat.main .v { font-size: 1.9rem; }
+    .big { gap: 8px; }
+    th, td { padding: 6px 5px; font-size: .82rem; }
+    td:first-child { white-space: normal; }
+    .badge { margin-left: 0; }
+    .hide-sm { display: none; }
+    .chips button { padding: 7px 10px; font-size: .85rem; }
+    .head-row .btn { padding: 6px 10px; font-size: .82rem; }
+    footer { padding: 0 12px 24px; }
+
+    /* Vehicle settings table becomes stacked cards */
+    table.edit, table.edit tbody { display: block; }
+    table.edit tr:first-child { display: none; }
+    table.edit tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+    table.edit td { border: none; padding: 0; white-space: normal; }
+    table.edit td::before { content: attr(data-label); display: block; font-size: .72rem; color: var(--muted); margin-bottom: 2px; }
+    table.edit td:first-child { grid-column: 1 / -1; }
+    table.edit td:last-child { grid-column: 3; display: flex; align-items: flex-end; justify-content: flex-end; }
+    table.edit input { min-width: 0; }
+  }
+
+  @media print {
+    :root { --bg: #fff; --card: #fff; --text: #000; --muted: #444; --line: #bbb; --accent: #1565c0; --accent-soft: #eef3fa; }
+    body { background: #fff; }
+    .noprint, nav.modes, footer { display: none !important; }
+    .mode { display: block; border: none; padding: 0; }
+    .pane.hidden { display: block !important; }
+    .pane { margin-bottom: 12px; }
+    .view3d { height: 320px; }
+    .card { break-inside: avoid; border-color: #bbb; }
+    .print-title { display: block; margin: 0 0 8px; }
+  }
+</style>
+</head>
+<body>
+<header class="noprint">
+  <h1>Reefer Load Calculator</h1>
+  <p>Box capacity, vehicle requirement and loading layout for refrigerated vehicles.</p>
+</header>
+<nav class="modes" id="modeTabs">
+  <button data-m="single" class="active">Single Box</button>
+  <button data-m="mix">Load Planner</button>
+  <button data-m="pallet">Pallets</button>
+  <button data-m="settings">Vehicles</button>
+</nav>
+
+<!-- ================= MODE 1: SINGLE BOX ================= -->
+<main class="mode" id="mode-single">
+  <section class="noprint">
+    <div class="card">
+      <h2>Vehicle</h2>
+      <div class="chips" id="s-vehicles"></div>
+      <p class="note" id="s-vehinfo"></p>
+    </div>
+    <div class="card">
+      <div class="unitline">
+        <h2 style="margin:0">Box Dimensions</h2>
+        <select id="s-unit" aria-label="Box unit">
+          <option value="cm">cm</option><option value="in">in</option><option value="mm">mm</option><option value="ft">ft</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div><label for="s-L">Length</label><input type="number" id="s-L" step="any" min="0"></div>
+        <div><label for="s-W">Width</label><input type="number" id="s-W" step="any" min="0"></div>
+        <div><label for="s-H">Height</label><input type="number" id="s-H" step="any" min="0"></div>
+      </div>
+      <div class="row2" style="margin-top:8px">
+        <div><label for="s-wt">Weight per box (kg)</label><input type="number" id="s-wt" step="any" min="0" placeholder="Optional"></div>
+        <div><label for="s-maxL">Max stack layers</label><input type="number" id="s-maxL" step="1" min="0" placeholder="No limit"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="s-rot"> Allow 90° rotation on floor</label>
+      <label class="check"><input type="checkbox" id="s-up"> This side up (no tipping)</label>
+      <label class="check"><input type="checkbox" id="s-adjust"> Adjust anyhow — fit extra boxes into leftover gaps by moving and rotating them (fully supported, no overhang)</label>
+      <label class="check"><input type="checkbox" id="s-block"> Block AC airflow — also load into the top air gap and up to the AC unit, then adjust for the maximum boxes</label>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2 class="print-title" id="s-printtitle"></h2>
+      <div class="head-row"><h2>Result</h2><button class="btn ghost noprint" data-print>Print / PDF</button></div>
+      <div class="big" id="s-stats"></div>
+      <div id="s-msgs"></div>
+    </div>
+    <div class="card" id="s-viewer"></div>
+    <div class="card">
+      <h2>Loading Instructions</h2>
+      <ol class="steps" id="s-steps"></ol>
+    </div>
+    <div class="card noprint">
+      <h2>Capacity by Vehicle</h2>
+      <div class="tablewrap"><table id="s-allveh"></table></div>
+      <p class="note">Click a row to select that vehicle.</p>
+    </div>
+    <div class="card noprint">
+      <h2>Loading Methods</h2>
+      <div class="tablewrap"><table id="s-compare"></table></div>
+    </div>
+  </section>
+</main>
+
+<!-- ================= MODE 2: LOAD PLANNER ================= -->
+<main class="mode hidden" id="mode-mix">
+  <section class="noprint">
+    <div class="card">
+      <h2>Shipment</h2>
+      <div id="m-items"></div>
+      <button class="btn ghost" id="m-add">+ Add box type</button>
+      <label class="check"><input type="checkbox" id="m-fill"> Fill empty spaces with other box types (on top of stacks and in side gaps)</label>
+      <label class="check"><input type="checkbox" id="m-adjust"> Adjust anyhow — fit remaining boxes into any leftover gap by moving and rotating them (fully supported, no overhang)</label>
+      <label class="check"><input type="checkbox" id="m-block"> Block AC airflow — also load into the top air gap and up to the AC unit, then adjust for the maximum boxes</label>
+      <p class="note">Box types are loaded in list order, first type nearest the cabin.</p>
+    </div>
+    <div class="card">
+      <h2>Vehicle</h2>
+      <select id="m-target" aria-label="Vehicle"></select>
+      <div id="m-autoveh">
+        <label style="margin-top:10px">Allowed vehicles</label>
+        <div class="chips" id="m-vehicles"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2 class="print-title" id="m-printtitle"></h2>
+      <div class="head-row"><h2>Plan</h2><button class="btn ghost noprint" data-print>Print / PDF</button></div>
+      <div class="big" id="m-stats"></div>
+      <div id="m-msgs"></div>
+      <div class="tablewrap noprint"><table id="m-plans"></table></div>
+    </div>
+    <div class="card">
+      <h2>Trucks</h2>
+      <div class="chips noprint" id="m-trucks"></div>
+      <div id="m-truckinfo" class="note"></div>
+    </div>
+    <div class="card" id="m-viewer"></div>
+    <div class="card">
+      <h2>Loading Instructions</h2>
+      <ol class="steps" id="m-steps"></ol>
+    </div>
+  </section>
+</main>
+
+<!-- ================= MODE 3: PALLETS ================= -->
+<main class="mode hidden" id="mode-pallet">
+  <section class="noprint">
+    <div class="card">
+      <h2>Vehicle</h2>
+      <div class="chips" id="p-vehicles"></div>
+      <p class="note" id="p-vehinfo"></p>
+    </div>
+    <div class="card">
+      <div class="unitline">
+        <h2 style="margin:0">Pallet</h2>
+        <select id="p-unit" aria-label="Pallet unit">
+          <option value="cm">cm</option><option value="in">in</option><option value="mm">mm</option><option value="ft">ft</option>
+        </select>
+      </div>
+      <label for="p-preset" style="margin-top:10px">Standard size</label>
+      <select id="p-preset">
+        <option value="120x100">1200 × 1000 mm (ISO / India standard)</option>
+        <option value="120x80">1200 × 800 mm (Euro)</option>
+        <option value="121.92x101.6">48 × 40 in (US / GMA)</option>
+        <option value="110x110">1100 × 1100 mm (Asia)</option>
+        <option value="114x114">1140 × 1140 mm</option>
+        <option value="custom">Custom</option>
+      </select>
+      <div class="row" style="margin-top:8px">
+        <div><label for="p-L">Length</label><input type="number" id="p-L" step="any" min="0"></div>
+        <div><label for="p-W">Width</label><input type="number" id="p-W" step="any" min="0"></div>
+        <div><label for="p-base">Pallet base height</label><input type="number" id="p-base" step="any" min="0"></div>
+      </div>
+      <div class="row2" style="margin-top:8px">
+        <div><label for="p-H">Loaded height (total)</label><input type="number" id="p-H" step="any" min="0"></div>
+        <div><label for="p-wt">Weight per pallet (kg)</label><input type="number" id="p-wt" step="any" min="0" placeholder="Optional"></div>
+      </div>
+      <p class="note" id="p-hnote"></p>
+      <label class="check"><input type="checkbox" id="p-rot"> Allow 90° rotation on floor</label>
+      <label class="check"><input type="checkbox" id="p-stack"> Stackable (pallet on pallet)</label>
+      <div id="p-stackrow" class="row2" style="margin-top:6px">
+        <div><label for="p-maxS">Max stack levels</label><input type="number" id="p-maxS" step="1" min="1"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="p-block"> Block AC airflow — use the top air gap and the space up to the AC unit for taller loads</label>
+    </div>
+    <div class="card">
+      <h2>Boxes on Pallet <span class="note">(optional)</span></h2>
+      <div class="row">
+        <div><label for="p-bL">Box length</label><input type="number" id="p-bL" step="any" min="0"></div>
+        <div><label for="p-bW">Box width</label><input type="number" id="p-bW" step="any" min="0"></div>
+        <div><label for="p-bH">Box height</label><input type="number" id="p-bH" step="any" min="0"></div>
+      </div>
+      <div class="row2" style="margin-top:8px">
+        <div><label for="p-maxLoad">Max load height on pallet</label><input type="number" id="p-maxLoad" step="any" min="0" placeholder="Fill vehicle height"></div>
+      </div>
+      <p class="note">When box size is entered, loaded height is calculated automatically. Boxes are not allowed to overhang the pallet.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2 class="print-title" id="p-printtitle"></h2>
+      <div class="head-row"><h2>Result</h2><button class="btn ghost noprint" data-print>Print / PDF</button></div>
+      <div class="big" id="p-stats"></div>
+      <div id="p-msgs"></div>
+    </div>
+    <div class="card" id="p-viewer"></div>
+    <div class="card">
+      <h2>Loading Instructions</h2>
+      <ol class="steps" id="p-steps"></ol>
+    </div>
+    <div class="card noprint">
+      <h2>Pallets by Vehicle</h2>
+      <div class="tablewrap"><table id="p-allveh"></table></div>
+      <p class="note">Click a row to select that vehicle.</p>
+    </div>
+  </section>
+</main>
+
+<!-- ================= MODE 4: VEHICLES ================= -->
+<main class="mode single-col hidden" id="mode-settings">
+  <section>
+    <div class="card">
+      <div class="head-row">
+        <h2>Vehicles (internal dimensions)</h2>
+        <div><button class="btn ghost" id="v-reset">Reset defaults</button> <button class="btn" id="v-add">+ Add vehicle</button></div>
+      </div>
+      <div class="tablewrap"><table class="edit" id="v-table"></table></div>
+      <p class="note">Default dimensions are approximate and vary by body builder. Enter measured internal dimensions for accurate results (7 ft 6 in = 7.5 ft). Settings are saved in this browser.</p>
+      <p class="note"><b>AC unit</b> is the reefer evaporator inside the box, at the top of the front wall, centred across the width. Width = across the truck, height = how far it hangs below the ceiling, depth = how far it reaches back from the front wall. Defaults are Carrier Transicold evaporator sizes for the unit class each body size usually carries (ceiling: Citimax 280/350, 400/500, 700, 1100; front wall: Supra nose-mount). Measure your unit and adjust.</p>
+    </div>
+    <div class="card">
+      <h2>Clearances (cm)</h2>
+      <div class="row" style="max-width:560px">
+        <div><label for="g-top">Top air gap</label><input type="number" id="g-top" step="any" min="0"></div>
+        <div><label for="g-door">Door clearance</label><input type="number" id="g-door" step="any" min="0"></div>
+        <div><label for="g-side">Side clearance</label><input type="number" id="g-side" step="any" min="0"></div>
+      </div>
+      <div class="row" style="max-width:560px;margin-top:8px">
+        <div><label for="g-ac">Clearance around AC unit</label><input type="number" id="g-ac" step="any" min="0"></div>
+      </div>
+      <p class="note">Keep at least 10 cm (4 in) above the load for air circulation. Do not load above the red load line. Keep the AC unit's air outlet and return clear — no cargo within the AC clearance.</p>
+    </div>
+    <div class="card">
+      <h2>Share settings between devices</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" id="v-export">Export settings</button>
+        <button class="btn ghost" id="v-import">Import settings</button>
+        <input type="file" id="v-file" accept=".json,application/json" class="hidden">
+      </div>
+      <p class="note">Export saves vehicles, AC units, freight rates and clearances to a file. Import that file on another phone or computer to use the same settings.</p>
+      <div id="v-msg"></div>
+    </div>
+  </section>
+</main>
+
+<footer>Floor layouts use guillotine-cut optimisation. Mixed loads are placed in sections from cabin to door. Actual results may vary with pallets, dunnage and carton bulge.</footer>
+
+<script>
+// ============================================================
+// Data & state
+// ============================================================
+const DEFAULT_VEHICLES = [
+  { id: "9",  name: "9 ft",  L: 8.6,  W: 4.8, H: 4.8, kg: 1000, rate: "", note: "Tata Ace / Intra class" },
+  { id: "10", name: "10 ft", L: 9.5,  W: 5.2, H: 5.2, kg: 1500, rate: "", note: "Bolero Pik-up / Dost class" },
+  { id: "14", name: "14 ft", L: 13.4, W: 6.2, H: 6.2, kg: 3500, rate: "", note: "Eicher 2049 / Tata 407-709 class" },
+  { id: "20", name: "20 ft", L: 19.3, W: 7.2, H: 7.0, kg: 7000, rate: "", note: "Eicher 2110 / Tata 1109 class" },
+  { id: "24", name: "24 ft", L: 23.3, W: 7.4, H: 7.2, kg: 9000, rate: "", note: "Tata 1412 / Eicher 2114 class" }
+];
+// Reefer evaporator (AC unit) inside the cargo box, top-front and centred across the width. cm: W across, H down from
+// the ceiling, D back from the front wall. Sizes from Carrier Transicold spec sheets for the unit class each body usually gets:
+// Citimax 280/350, Citimax 400/500 (≈ Xarios 5), Citimax 700, Citimax 1100 (≈ Xarios 6) ceiling units; Supra nose-mount wall unit.
+const DEFAULT_AC = {
+  "9":  { acType: "ceiling", acW: 86,    acH: 17,   acD: 61 },
+  "10": { acType: "ceiling", acW: 110,   acH: 19.5, acD: 61.5 },
+  "14": { acType: "ceiling", acW: 122,   acH: 27.5, acD: 55 },
+  "20": { acType: "ceiling", acW: 156,   acH: 22.5, acD: 69 },
+  "24": { acType: "wall",    acW: 122.5, acH: 55,   acD: 29 }
+};
+DEFAULT_VEHICLES.forEach(v => Object.assign(v, DEFAULT_AC[v.id]));
+const AC_TYPES = { none: "None", ceiling: "Ceiling", wall: "Front wall" };
+const PALETTE = ["#3b82c4", "#e08a2e", "#3aa76d", "#c2527a", "#8a6fd1", "#c9a227", "#2bb3b3", "#d0603a"];
+const TO_MM = { mm: 1, cm: 10, in: 25.4, ft: 304.8 };
+const UNIT_NAME = { mm: "mm", cm: "cm", in: "in", ft: "ft" };
+// Nearest mm, so exact fits survive conversion (3 × 16 in = 48 in); rounding up would break them.
+const toMM = (v, unit) => Math.round((+v || 0) * TO_MM[unit]);
+// Container slack for residual rounding (4 × 12 in = 4 × 305 mm = 1220 mm vs a 1219 mm 48 in deck).
+const FIT_TOL = 3;
+const STORE_KEY = "reefer-calc.v2";
+const $ = id => document.getElementById(id);
+const fmt = (n, d = 0) => Number(n).toLocaleString("en-IN", { maximumFractionDigits: d });
+const cm = mm => fmt(mm / 10, 1) + " cm";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const clone = o => JSON.parse(JSON.stringify(o));
+
+const DEFAULT_STATE = {
+  mode: "single",
+  vehicles: clone(DEFAULT_VEHICLES),
+  gaps: { top: 10, door: 0, side: 0, ac: 10 },
+  single: { veh: "20", unit: "cm", L: 60, W: 40, H: 30, wt: "", maxL: "", rot: true, up: true, adjust: false, block: false },
+  pallet: { veh: "20", unit: "cm", preset: "120x100", L: 120, W: 100, base: 15, H: 150, wt: "", rot: true, stack: false, maxS: 2, bL: "", bW: "", bH: "", maxLoad: "", block: false },
+  mix: {
+    unit: "cm", off: {}, fill: true, adjust: false, block: false, target: "auto",
+    items: [
+      { name: "Box A", L: 60, W: 40, H: 30, qty: 300, wt: "", maxL: "", up: true, rot: true },
+      { name: "Box B", L: 50, W: 30, H: 25, qty: 200, wt: "", maxL: "", up: true, rot: true }
+    ]
+  }
+};
+let S = loadState();
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      // Vehicles saved before AC units were modelled get the researched default for their size.
+      (s.vehicles || []).forEach(v => { if (v.acType === undefined) Object.assign(v, DEFAULT_AC[v.id] || { acType: "none", acW: "", acH: "", acD: "" }); });
+      return { ...clone(DEFAULT_STATE), ...s, single: { ...DEFAULT_STATE.single, ...s.single }, pallet: { ...DEFAULT_STATE.pallet, ...s.pallet }, mix: { ...clone(DEFAULT_STATE.mix), ...s.mix }, gaps: { ...DEFAULT_STATE.gaps, ...s.gaps } };
+    }
+  } catch (e) {}
+  return clone(DEFAULT_STATE);
+}
+let saveTimer;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch (e) {} }, 300);
+}
+// blockAir: load into the top air gap and right up to the AC unit (no airflow clearances); the unit itself stays solid.
+function truckOf(v, blockAir = false) {
+  const T = { L: v.L * 304.8, W: v.W * 304.8, H: v.H * 304.8 };
+  const g = { top: blockAir ? 0 : (+S.gaps.top || 0) * 10, door: (+S.gaps.door || 0) * 10, side: (+S.gaps.side || 0) * 10, blocked: blockAir };
+  const U = { L: Math.floor(T.L - g.door) + FIT_TOL, W: Math.floor(T.W - 2 * g.side) + FIT_TOL, H: Math.floor(T.H - g.top) + FIT_TOL };
+  return { T, U, gaps: g, ac: acOf(v, T, g, blockAir ? 0 : (+S.gaps.ac || 0) * 10), valid: T.L > 0 && T.W > 0 && T.H > 0 && U.L > 0 && U.W > 0 && U.H > 0 };
+}
+// The AC unit as a box in truck coordinates, plus the keep-out zone around it in usable-area coordinates
+// (x from the front wall, y from the first side gap). Cargo under the zone must stay below ob.zTop.
+function acOf(v, T, g, clr) {
+  if (!v.acType || v.acType === "none") return null;
+  const W = (+v.acW || 0) * 10, H = (+v.acH || 0) * 10, D = (+v.acD || 0) * 10;
+  if (!(W > 0 && H > 0 && D > 0)) return null;
+  const unit = { x: 0, y: (T.W - W) / 2, z: T.H - H, l: D, w: W, h: H };
+  const ob = { x1: 0, x2: D + clr, y1: unit.y - clr - g.side, y2: unit.y + W + clr - g.side, zTop: T.H - H - clr };
+  return { type: v.acType, unit, ob, clr };
+}
+// True when a placed box reaches into the AC keep-out zone.
+function hitsAC(p, ac) {
+  if (!ac) return false;
+  const o = ac.ob;
+  return p.x < o.x2 && p.x + p.l > o.x1 && p.y < o.y2 && p.y + p.w > o.y1 && p.z + p.h > o.zTop + FIT_TOL;
+}
+// Placements for a pack with anything reaching into the AC zone left out, first n in loading order.
+function placeAvoidingAC(pack, opt, x0, n, color, colorB, ac, y0 = 0, z0 = 0, spotOk = null) {
+  const list = placementsFrom(pack, opt, x0, ac ? MAX_DRAW : n, color, colorB, y0, z0, spotOk);
+  return (ac ? list.filter(p => !hitsAC(p, ac)) : list).slice(0, n);
+}
+// Loading instruction for the stacks under the AC unit; "" when the unit costs nothing.
+function acStep(ac, opt, what, x0 = 0) {
+  if (!ac) return "";
+  const allowed = Math.max(0, Math.floor((ac.ob.zTop + FIT_TOL) / opt.h));
+  if (allowed >= opt.layers) return "";
+  const o = ac.ob, g = ac.unit;
+  return `<span class="sw" style="background:#8a96a8"></span><b>Under the AC unit</b> (${AC_TYPES[ac.type].toLowerCase()}, ${cm(g.w)} wide × ${cm(g.h)} deep from ceiling, reaching ${cm(g.l)} from the front wall): within front ${cm(Math.max(o.x1, x0))}–${cm(o.x2)} and side ${cm(Math.max(0, o.y1))}–${cm(o.y2)}, stack ${allowed === 0 ? "<b>no</b> " + what : `only <b>${allowed}</b> layer${allowed > 1 ? "s" : ""}`} ${ac.clr > 0 ? `(keep ${cm(ac.clr)} clear of the unit for airflow)` : "(right up to the unit — airflow blocked)"}.`;
+}
+// Closing instruction about the air gap above the load.
+function topGapText(g) {
+  return g.blocked ? "Loaded up to the ceiling — <b>airflow blocked</b>; use only for pre-cooled cargo on short trips." : `Maintain a minimum ${cm(g.top)} air gap at the top.`;
+}
+// Boxes lost under the AC for a floor pack stacked `layers` high (section starting at x0), counted per stack without enumerating.
+function acLoss(pack, layers, h, x0, ac) {
+  if (!ac) return 0;
+  const o = ac.ob, allowed = Math.max(0, Math.floor((o.zTop + FIT_TOL) / h));
+  if (allowed >= layers) return 0;
+  // Grid cells k whose span [start + k*step, start + (k+1)*step) overlaps [a, b), clamped to 0..n-1.
+  const hit = (start, step, n, a, b) => {
+    const lo = Math.max(0, Math.floor((a - start) / step - 1) + 1), hi = Math.min(n - 1, Math.ceil((b - start) / step) - 1);
+    return Math.max(0, hi - lo + 1);
+  };
+  let spots = 0;
+  for (const bl of pack.blocks) spots += hit(x0 + bl.x, bl.pa, bl.cx, o.x1, o.x2) * hit(bl.y, bl.pb, bl.cy, o.y1, o.y2);
+  return spots * (layers - allowed);
+}
+const vehVolume = v => v.L * v.W * v.H;
+const acInfo = v => !v.acType || v.acType === "none" ? "No AC unit set" : `AC unit: ${AC_TYPES[v.acType].toLowerCase()}, ${v.acW} × ${v.acH} × ${v.acD} cm`;
+const hasRate = v => +v.rate > 0;
+
+// ============================================================
+// 2D floor packing of identical rectangles (guillotine DP on raster points)
+// ============================================================
+function rasterPoints(D, a, b, useB) {
+  const s = new Set([0]);
+  // Tiny boxes would give millions of a/b combinations; plain multiples are plenty at that scale.
+  if (useB && (D / a + 1) * (D / b + 1) > 2e5) {
+    for (let i = 0; i * a <= D; i++) s.add(i * a);
+    for (let j = 0; j * b <= D; j++) s.add(j * b);
+    return [...s].sort((x, y) => x - y);
+  }
+  for (let i = 0; i * a <= D; i++) {
+    if (!useB) { s.add(i * a); continue; }
+    for (let j = 0; i * a + j * b <= D; j++) s.add(i * a + j * b);
+  }
+  return [...s].sort((x, y) => x - y);
+}
+function floorIdx(arr, v) {
+  let lo = 0, hi = arr.length - 1;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (arr[m] <= v) lo = m; else hi = m - 1; }
+  return lo;
+}
+function makeBlock(x, y, w, h, o, a, b) {
+  const pa = o === 0 ? a : b, pb = o === 0 ? b : a;
+  const cx = Math.floor(w / pa), cy = Math.floor(h / pb);
+  return { x, y, o, pa, pb, cx, cy, count: cx * cy };
+}
+const tidy = bl => bl.filter(b => b.count > 0).sort((p, q) => p.x - q.x || p.y - q.y);
+const packCache = new Map();
+function pack2D(L, W, a, b, rot) {
+  const key = L + "|" + W + "|" + a + "|" + b + "|" + rot;
+  if (packCache.has(key)) return packCache.get(key);
+  if (packCache.size > 5000) packCache.clear();
+  const r = pack2DRaw(L, W, a, b, rot);
+  packCache.set(key, r);
+  return r;
+}
+function pack2DRaw(L, W, a, b, rot) {
+  // a = side along truck length (orientation 0), b = side along width
+  if (a <= 0 || b <= 0 || L < Math.min(a, b) || W < Math.min(a, b)) return { count: 0, blocks: [] };
+  const X = rasterPoints(L, a, b, rot), Y = rasterPoints(W, b, a, rot);
+  const nx = X.length, ny = Y.length;
+  if (nx * ny * (nx + ny) / 2 > 3e6) return twoBlock(L, W, a, b, rot);
+  // f = most boxes, nb = number of blocks (fewer = simpler loading pattern, used as tie-breaker)
+  const f = new Int32Array(nx * ny), nb = new Int32Array(nx * ny), kind = new Int8Array(nx * ny), par = new Int32Array(nx * ny);
+  for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < ny; j++) {
+      const x = X[i], y = Y[j], k = i * ny + j;
+      const c0 = Math.floor(x / a) * Math.floor(y / b), c1 = rot ? Math.floor(x / b) * Math.floor(y / a) : -1;
+      let best = c0, bn = 1, bk = 0, bp = 0;
+      if (c1 > best) { best = c1; bk = 1; }
+      for (let p = 1; p < nx && X[p] * 2 <= x; p++) {
+        const k1 = p * ny + j, k2 = floorIdx(X, x - X[p]) * ny + j, v = f[k1] + f[k2], n = nb[k1] + nb[k2];
+        if (v > best || (v === best && n < bn)) { best = v; bn = n; bk = 2; bp = p; }
+      }
+      for (let q = 1; q < ny && Y[q] * 2 <= y; q++) {
+        const k1 = i * ny + q, k2 = i * ny + floorIdx(Y, y - Y[q]), v = f[k1] + f[k2], n = nb[k1] + nb[k2];
+        if (v > best || (v === best && n < bn)) { best = v; bn = n; bk = 3; bp = q; }
+      }
+      f[k] = best; nb[k] = best === 0 ? 0 : bn; kind[k] = bk; par[k] = bp;
+    }
+  }
+  const blocks = [];
+  (function build(i, j, ox, oy) {
+    const k = i * ny + j, x = X[i], y = Y[j];
+    if (f[k] === 0) return;
+    if (kind[k] <= 1) { blocks.push(makeBlock(ox, oy, x, y, kind[k], a, b)); return; }
+    if (kind[k] === 2) { const p = par[k]; build(p, j, ox, oy); build(floorIdx(X, x - X[p]), j, ox + X[p], oy); }
+    else { const q = par[k]; build(i, q, ox, oy); build(i, floorIdx(Y, y - Y[q]), ox, oy + Y[q]); }
+  })(nx - 1, ny - 1, 0, 0);
+  return { count: f[nx * ny - 1], blocks: tidy(blocks) };
+}
+function twoBlock(L, W, a, b, rot) {
+  let best = { count: -1, blocks: [] };
+  const tryIt = bl => { const c = bl.reduce((s, x) => s + x.count, 0); if (c > best.count) best = { count: c, blocks: tidy(bl) }; };
+  for (const o of rot ? [0, 1] : [0]) {
+    const pa = o ? b : a, pb = o ? a : b;
+    for (let k = 0; k * pa <= L; k++)
+      tryIt([makeBlock(0, 0, k * pa, W, o, a, b), ...(rot ? [makeBlock(k * pa, 0, L - k * pa, W, 1 - o, a, b)] : [])]);
+    for (let k = 0; k * pb <= W; k++)
+      tryIt([makeBlock(0, 0, L, k * pb, o, a, b), ...(rot ? [makeBlock(0, k * pb, L, W - k * pb, 1 - o, a, b)] : [])]);
+  }
+  return best;
+}
+
+// ============================================================
+// Box orientation options & placements
+// ============================================================
+const SIDE_NAME = ["length", "width", "height"];
+// Returns ways to stand a box (which side points up) with the resulting floor footprint and layer count.
+function standOptions(box, U) {
+  const d = [box.L, box.W, box.H], out = [];
+  for (const up of box.up ? [2] : [2, 0, 1]) {
+    const [f1, f2] = [0, 1, 2].filter(i => i !== up).map(i => d[i]);
+    let layers = Math.floor(U.H / d[up]);
+    if (box.maxL > 0) layers = Math.min(layers, box.maxL);
+    if (layers > 0) out.push({ up, f1, f2, h: d[up], layers });
+  }
+  return out;
+}
+// Cap on boxes drawn/placed individually; counts above this are still calculated, just not drawn.
+const MAX_DRAW = 20000;
+// Floor spots of a pack, in loading order: cabin to door, each cross-row built layer by layer.
+function placementsFrom(pack, opt, x0, limit, color, colorB, y0 = 0, z0 = 0, spotOk = null) {
+  limit = Math.min(limit, MAX_DRAW);
+  if (pack.count > MAX_DRAW * 4) return []; // too many floor spots to enumerate
+  let floor = [];
+  for (const bl of pack.blocks)
+    for (let i = 0; i < bl.cx; i++)
+      for (let j = 0; j < bl.cy; j++)
+        floor.push({ x: x0 + bl.x + i * bl.pa, y: y0 + bl.y + j * bl.pb, l: bl.pa, w: bl.pb, o: bl.o });
+  if (spotOk) floor = floor.filter(spotOk);
+  floor.sort((p, q) => p.x - q.x || p.y - q.y);
+  const out = [];
+  let i = 0;
+  while (i < floor.length && out.length < limit) {
+    let j = i; while (j < floor.length && floor[j].x === floor[i].x) j++;
+    for (let z = 0; z < opt.layers && out.length < limit; z++)
+      for (let k = i; k < j && out.length < limit; k++)
+        out.push({ ...floor[k], z: z0 + z * opt.h, h: opt.h, color: floor[k].o ? colorB : color });
+    i = j;
+  }
+  return out;
+}
+// True when a footprint rests fully on the given spots (each spot is a box top at the same height).
+function isSupported(p, spots) {
+  let area = 0;
+  for (const s of spots) {
+    const ox = Math.min(p.x + p.l, s.x + s.l) - Math.max(p.x, s.x);
+    const oy = Math.min(p.y + p.w, s.y + s.w) - Math.max(p.y, s.y);
+    if (ox > 0 && oy > 0) area += ox * oy;
+  }
+  return area >= p.l * p.w - 1;
+}
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = c => Math.max(0, Math.min(255, Math.round(c + amt * 255)));
+  return "#" + [f(n >> 16), f((n >> 8) & 255), f(n & 255)].map(c => c.toString(16).padStart(2, "0")).join("");
+}
+
+// ============================================================
+// Adjust anyhow: fit extra boxes into leftover empty space, turned any way the box allows.
+// Cuboids are {x, y, z, l, w, h} in usable-area coordinates (x from the front wall, l along the truck).
+// ============================================================
+const overlaps3 = (a, b) => a.x < b.x + b.l && b.x < a.x + a.l && a.y < b.y + b.w && b.y < a.y + a.w && a.z < b.z + b.h && b.z < a.z + a.h;
+const within3 = (a, b) => a.x >= b.x && a.y >= b.y && a.z >= b.z && a.x + a.l <= b.x + b.l && a.y + a.w <= b.y + b.w && a.z + a.h <= b.z + b.h;
+// Largest empty cuboids left in a space after removing an occupied one (up to one per side).
+function subtractSpace(s, o) {
+  if (!overlaps3(s, o)) return [s];
+  const out = [];
+  if (o.x > s.x) out.push({ ...s, l: o.x - s.x });
+  if (o.x + o.l < s.x + s.l) out.push({ ...s, x: o.x + o.l, l: s.x + s.l - o.x - o.l });
+  if (o.y > s.y) out.push({ ...s, w: o.y - s.y });
+  if (o.y + o.w < s.y + s.w) out.push({ ...s, y: o.y + o.w, w: s.y + s.w - o.y - o.w });
+  if (o.z > s.z) out.push({ ...s, h: o.z - s.z });
+  if (o.z + o.h < s.z + s.h) out.push({ ...s, z: o.z + o.h, h: s.z + s.h - o.z - o.h });
+  return out;
+}
+// Maximal empty spaces of container C around the occupied cuboids, ignoring any too small for a box.
+function emptySpaces(C, occ, minDim) {
+  let spaces = [C];
+  for (const o of occ) {
+    spaces = spaces.flatMap(s => subtractSpace(s, o)).filter(s => s.l >= minDim && s.w >= minDim && s.h >= minDim);
+    spaces = spaces.filter((s, i) => !spaces.some((t, j) => j !== i && within3(s, t) && (!within3(t, s) || j < i)));
+    if (spaces.length > 300) spaces = spaces.sort((a, b) => b.l * b.w * b.h - a.l * a.w * a.h).slice(0, 300);
+  }
+  return spaces;
+}
+// Ways a box may be placed: [along truck length, across, vertical]. "This side up" keeps its height vertical.
+function orientations(t) {
+  const { L, W, H } = t;
+  const all = t.up ? [[L, W, H], ...(t.rot ? [[W, L, H]] : [])] : [[L, W, H], [W, L, H], [L, H, W], [H, L, W], [W, H, L], [H, W, L]];
+  const seen = new Set();
+  return all.filter(d => { const k = d.join("x"); return !seen.has(k) && seen.add(k); });
+}
+const vertName = (t, d) => d[2] === t.H ? "upright" : d[2] === t.L ? "on its side, length vertical" : "on its side, width vertical";
+const acCuboid = (ac, C) => ({ x: ac.ob.x1, y: ac.ob.y1, z: ac.ob.zTop, l: ac.ob.x2 - ac.ob.x1, w: ac.ob.y2 - ac.ob.y1, h: C.h, solid: false });
+function bbox3(list) {
+  const x = Math.min(...list.map(p => p.x)), y = Math.min(...list.map(p => p.y)), z = Math.min(...list.map(p => p.z));
+  return { x, y, z, l: Math.max(...list.map(p => p.x + p.l)) - x, w: Math.max(...list.map(p => p.y + p.w)) - y, h: Math.max(...list.map(p => p.z + p.h)) - z };
+}
+// Greedily place grids of extra boxes into the biggest-payoff empty space. A space above the floor is usable only
+// where it rests completely on a solid (fully stacked) cuboid, so nothing overhangs or sits on a gap.
+// items: [{ t, left, color }]; returns [{ t, n, d, nx, ny, nz, at, list }].
+function adjustFill(C, occ, items, kgLeft) {
+  occ = occ.slice();
+  const extras = [], minDim = Math.min(...items.map(it => Math.min(it.t.L, it.t.W, it.t.H)));
+  for (let iter = 0; iter < 40; iter++) {
+    let best = null;
+    for (const sp of emptySpaces(C, occ, minDim)) {
+      let foot = sp;
+      if (sp.z > FIT_TOL) {
+        foot = null;
+        let area = 0;
+        for (const o of occ) if (o.solid && Math.abs(o.z + o.h - sp.z) <= FIT_TOL) {
+          const x1 = Math.max(sp.x, o.x), x2 = Math.min(sp.x + sp.l, o.x + o.l), y1 = Math.max(sp.y, o.y), y2 = Math.min(sp.y + sp.w, o.y + o.w);
+          if (x2 > x1 && y2 > y1 && (x2 - x1) * (y2 - y1) > area) { area = (x2 - x1) * (y2 - y1); foot = { x: x1, y: y1, l: x2 - x1, w: y2 - y1 }; }
+        }
+        if (!foot) continue;
+      }
+      for (const it of items) {
+        if (it.left <= 0) continue;
+        const wLeft = it.t.wt > 0 && kgLeft < Infinity ? Math.floor(kgLeft / it.t.wt) : Infinity;
+        for (const d of orientations(it.t)) {
+          const nx = Math.floor((foot.l + FIT_TOL) / d[0]), ny = Math.floor((foot.w + FIT_TOL) / d[1]);
+          let nz = Math.floor((sp.h + FIT_TOL) / d[2]);
+          if (it.t.maxL > 0) nz = Math.min(nz, it.t.maxL);
+          const n = Math.min(nx * ny * nz, it.left, wLeft), vol = n * d[0] * d[1] * d[2];
+          if (n > 0 && (!best || vol > best.vol)) best = { it, d, nx, ny, nz, n, vol, at: { x: foot.x, y: foot.y, z: sp.z } };
+        }
+      }
+    }
+    if (!best) break;
+    const { it, d, nx, ny, nz, n, at } = best, list = [];
+    for (let k = 0; k < nz && list.length < n; k++)
+      for (let i = 0; i < nx && list.length < n; i++)
+        for (let j = 0; j < ny && list.length < n; j++)
+          list.push({ x: at.x + i * d[0], y: at.y + j * d[1], z: at.z + k * d[2], l: d[0], w: d[1], h: d[2], color: it.color });
+    const full = n === nx * ny * nz;
+    occ.push({ x: at.x, y: at.y, z: at.z, l: nx * d[0], w: ny * d[1], h: Math.ceil(n / (nx * ny)) * d[2], solid: full });
+    it.left -= n;
+    if (it.t.wt > 0) kgLeft -= n * it.t.wt;
+    extras.push({ t: it.t, n, d, nx, ny, nz: Math.ceil(n / (nx * ny)), at, list });
+  }
+  return extras;
+}
+// Loading instructions for adjusted extras.
+function extraSteps(extras, conv, nameOf) {
+  return extras.map(e => `<span class="sw" style="background:${e.list[0].color}"></span><b>Adjusted: ${nameOf ? esc(nameOf(e.t)) + " — " : ""}${fmt(e.n)} extra ${plural(e.n, "box", "boxes")}</b>, ${vertName(e.t, e.d)}
+    (${conv(e.d[0])} along truck length × ${conv(e.d[1])} across × ${conv(e.d[2])} high): from front ${cm(e.at.x)}–${cm(e.at.x + e.nx * e.d[0])}, from side ${cm(e.at.y)}–${cm(e.at.y + e.ny * e.d[1])},
+    ${e.at.z > FIT_TOL ? `on top of the load at ${cm(e.at.z)} height` : "on the floor"} — ${e.nx} × ${e.ny} × ${e.nz}.`);
+}
+
+// ============================================================
+// MODE 1: single box type
+// ============================================================
+function singleBox() {
+  const s = S.single, u = TO_MM[s.unit];
+  return { L: toMM(s.L, s.unit), W: toMM(s.W, s.unit), H: toMM(s.H, s.unit), up: s.up, rot: s.rot, maxL: parseInt(s.maxL) || 0, wt: +s.wt || 0, adjust: !!s.adjust, block: !!s.block };
+}
+function calcSingle(v, box) {
+  const tr = truckOf(v, !!box.block);
+  const res = { v, ...tr, box, options: [], ok: false };
+  if (!(box.L > 0 && box.W > 0 && box.H > 0)) { res.error = "Enter all box dimensions."; return res; }
+  if (!tr.valid) { res.error = `Invalid dimensions for ${v.name}. Check the Vehicles tab.`; return res; }
+  for (const o of standOptions(box, tr.U)) {
+    const p = pack2D(tr.U.L, tr.U.W, o.f1, o.f2, box.rot);
+    // Single-orientation layouts for the comparison table, also reduced for the AC unit.
+    const grid = (a, b) => { const bl = makeBlock(0, 0, tr.U.L, tr.U.W, 0, a, b); return { per: bl.count, tot: bl.count * o.layers - acLoss({ blocks: [bl] }, o.layers, o.h, 0, tr.ac) }; };
+    const loss = acLoss(p, o.layers, o.h, 0, tr.ac);
+    res.options.push({ ...o, perLayer: p.count, total: p.count * o.layers - loss, acLoss: loss, pack: p, t1: grid(o.f1, o.f2), t2: grid(o.f2, o.f1) });
+  }
+  res.options.sort((p, q) => q.total - p.total || (p.up === 2 ? -1 : q.up === 2 ? 1 : 0));
+  const best = res.options[0];
+  if (!best || best.total === 0) { res.error = "Box does not fit in this vehicle."; return res; }
+  res.best = best;
+  res.weightLimit = box.wt > 0 && +v.kg > 0 ? Math.floor(+v.kg / box.wt) : Infinity;
+  res.final = res.base = Math.min(best.total, res.weightLimit);
+  if (res.final === 0) { res.error = `Weight per unit (${fmt(box.wt)} kg) exceeds the payload of ${v.name} (${fmt(v.kg)} kg).`; return res; }
+  res.extras = []; res.extra = 0;
+  if ((box.adjust || (box.block && !box.noFill)) && res.base === best.total) {
+    const C = { x: 0, y: 0, z: 0, l: tr.U.L, w: tr.U.W, h: tr.U.H };
+    // Each floor block stacked full height is occupied; it can carry extras only if no stack in it was cut short by the AC.
+    const occ = best.pack.blocks.map(bl => ({ x: bl.x, y: bl.y, z: 0, l: bl.cx * bl.pa, w: bl.cy * bl.pb, h: best.layers * best.h, solid: acLoss({ blocks: [bl] }, best.layers, best.h, 0, tr.ac) === 0 }));
+    if (tr.ac) occ.push(acCuboid(tr.ac, C));
+    res.extras = adjustFill(C, occ, [{ t: box, left: res.weightLimit - res.base, color: PALETTE[4] }], Infinity);
+    res.extra = res.extras.reduce((s, e) => s + e.n, 0);
+    res.final += res.extra;
+  }
+  res.ok = true;
+  return res;
+}
+
+function blockText(bl, conv) {
+  return `<b>${conv(bl.pa)}</b> side along truck length, <b>${conv(bl.pb)}</b> across — <b>${bl.cx}</b> × <b>${bl.cy}</b> = <b>${bl.count}</b> ${plural(bl.count, "box", "boxes")}`;
+}
+const plural = (n, one, many) => n === 1 ? one : many;
+function convFor(unit) { return v => fmt(v / TO_MM[unit], 1) + " " + UNIT_NAME[unit]; }
+
+function renderSingle() {
+  const v = S.vehicles.find(x => x.id === S.single.veh) || S.vehicles[0];
+  if (v) S.single.veh = v.id;
+  $("s-vehicles").innerHTML = S.vehicles.map(x => `<button data-id="${esc(x.id)}" class="${v && x.id === v.id ? "active" : ""}" title="${esc(x.note || "")}">${esc(x.name)}</button>`).join("");
+  if (!v) { $("s-stats").innerHTML = ""; $("s-msgs").innerHTML = `<div class="msg">Add a vehicle in the Vehicles tab.</div>`; return; }
+  $("s-vehinfo").innerHTML = `Internal: ${v.L} × ${v.W} × ${v.H} ft · Payload ${fmt(+v.kg || 0)} kg${hasRate(v) ? ` · ₹${fmt(v.rate)}/trip` : ""} · ${acInfo(v)} · <a href="#" data-goto="settings">Edit</a>`;
+  const box = singleBox(), res = calcSingle(v, box), conv = convFor(S.single.unit);
+  $("s-printtitle").textContent = `Load Plan — ${v.name} vehicle, box ${S.single.L} × ${S.single.W} × ${S.single.H} ${UNIT_NAME[S.single.unit]}`;
+
+  if (!res.ok) {
+    $("s-stats").innerHTML = `<div class="stat main"><div class="v">0</div><div class="k">Total boxes</div></div>`;
+    $("s-msgs").innerHTML = `<div class="msg">${res.error}</div>`;
+    $("s-steps").innerHTML = ""; $("s-compare").innerHTML = "";
+    viewers.single.show(null);
+  } else {
+    const b = res.best, boxVol = box.L * box.W * box.H, tVol = res.T.L * res.T.W * res.T.H;
+    $("s-stats").innerHTML = `
+      <div class="stat main"><div class="v">${fmt(res.final)}</div><div class="k">Total boxes</div></div>
+      <div class="stat"><div class="v">${fmt(b.perLayer)}</div><div class="k">Per layer</div></div>
+      <div class="stat"><div class="v">${b.layers}</div><div class="k">Layers</div></div>
+      ${res.extra ? `<div class="stat"><div class="v">+${fmt(res.extra)}</div><div class="k">Extra (adjusted)</div></div>` : ""}
+      <div class="stat"><div class="v">${fmt(res.final * boxVol / tVol * 100, 1)}%</div><div class="k">Space utilisation</div></div>
+      ${box.wt > 0 ? `<div class="stat"><div class="v">${fmt(res.final * box.wt)} kg</div><div class="k">Total weight</div></div>` : ""}
+      ${hasRate(v) ? `<div class="stat"><div class="v">₹${fmt(v.rate / res.final, 2)}</div><div class="k">Freight per box</div></div>` : ""}`;
+    const m = [];
+    if (box.block) {
+      const normal = calcSingle(v, { ...box, block: false });
+      const gain = res.final - (normal.ok ? normal.final : 0);
+      m.push(`<div class="msg"><b>AC airflow blocked:</b> top air gap and AC clearance used for cargo — <b>${gain > 0 ? `+${fmt(gain)} boxes` : "no extra boxes"}</b> vs normal loading (${fmt(normal.ok ? normal.final : 0)}). Cold air cannot circulate, so cargo may warm up; use only for pre-cooled cargo on short trips.</div>`);
+    }
+    if (box.adjust || box.block) m.push(res.extra ? `<div class="msg ok">Adjust anyhow: <b>${fmt(res.extra)} extra ${plural(res.extra, "box", "boxes")}</b> fit into leftover gaps (shown in purple).</div>`
+      : `<div class="msg">Adjust anyhow: ${res.base < b.total ? "payload limit already reached." : "no leftover gap is large enough for another box."}</div>`);
+    if (res.base < b.total) m.push(`<div class="msg">Space allows ${fmt(b.total)} boxes; payload limit (${fmt(v.kg)} kg) caps the load at <b>${fmt(res.final)}</b>.</div>`);
+    if (b.up !== 2) m.push(`<div class="msg">Best fit requires boxes on their side (${SIDE_NAME[b.up]} vertical). Enable "This side up" if not permitted.</div>`);
+    const usedL = Math.max(...b.pack.blocks.map(bl => bl.x + bl.cx * bl.pa)), usedW = Math.max(...b.pack.blocks.map(bl => bl.y + bl.cy * bl.pb));
+    m.push(`<div class="msg ok">Unused space — length: ${cm(Math.max(0, res.T.L - usedL))}, width: ${cm(Math.max(0, res.T.W - usedW))}, height: ${cm(Math.max(0, res.T.H - b.layers * b.h))}.</div>`);
+    $("s-msgs").innerHTML = m.join("");
+
+    const steps = [`Start at the front wall (cabin side). ${res.gaps.side > 0 ? `Leave ${cm(res.gaps.side)} on each side.` : "Keep boxes flush against one side wall."}`];
+    if (b.up !== 2) steps.push(`Place each box with its <b>${SIDE_NAME[b.up]} (${conv(b.h)})</b> vertical.`);
+    b.pack.blocks.forEach((bl, n) => steps.push(`<span class="sw" style="background:${bl.o ? PALETTE[1] : PALETTE[0]}"></span><b>Block ${n + 1}</b> (from front ${cm(bl.x)}–${cm(bl.x + bl.cx * bl.pa)}, from side ${cm(bl.y)}–${cm(bl.y + bl.cy * bl.pb)}): ${blockText(bl, conv)} per layer.`));
+    steps.push(`Repeat for <b>${b.layers}</b> layers (${conv(b.h)} each). ${topGapText(res.gaps)}`);
+    const acS = acStep(res.ac, b, "boxes");
+    if (acS) steps.push(acS);
+    steps.push(...extraSteps(res.extras, conv));
+    steps.push(`Total: ${fmt(b.perLayer)} × ${b.layers}${b.acLoss ? ` − ${fmt(b.acLoss)} under AC unit` : ""}${res.extra ? ` + ${fmt(res.extra)} adjusted` : ""} = <b>${fmt(b.total + res.extra)}</b> boxes${res.base < b.total ? ` (stop at ${fmt(res.base)} — payload limit)` : ""}.`);
+    $("s-steps").innerHTML = steps.map(s => `<li>${s}</li>`).join("");
+
+    const rows = [];
+    for (const o of res.options) {
+      const t = o.up === 2 ? "Upright" : `On side (${SIDE_NAME[o.up]} vertical)`;
+      rows.push({ t: `${t} — orientation A`, per: o.t1.per, lay: o.layers, tot: o.t1.tot });
+      if (box.rot) {
+        rows.push({ t: `${t} — orientation B (rotated 90°)`, per: o.t2.per, lay: o.layers, tot: o.t2.tot });
+        rows.push({ t: `${t} — mixed (optimised)`, per: o.perLayer, lay: o.layers, tot: o.total });
+      }
+    }
+    const bt = Math.max(...rows.map(r => r.tot));
+    $("s-compare").innerHTML = `<tr><th>Method</th><th class="num">Per layer</th><th class="num">Layers</th><th class="num">Total${res.ac ? " (after AC)" : ""}</th></tr>` +
+      rows.map(r => `<tr class="${r.tot === bt ? "best" : ""}"><td>${r.t}</td><td class="num">${fmt(r.per)}</td><td class="num">${r.lay}</td><td class="num">${fmt(r.tot)}</td></tr>`).join("");
+
+    const list = placeAvoidingAC(b.pack, b, 0, res.base, PALETTE[0], PALETTE[1], res.ac).concat(...res.extras.map(e => e.list));
+    viewers.single.show({
+      T: res.T, gaps: res.gaps, ac: res.ac, list,
+      labels: b.pack.blocks.map((bl, n) => ({ x: bl.x, y: bl.y, w: bl.cx * bl.pa, d: bl.cy * bl.pb, text: `${n + 1}: ${bl.cx}×${bl.cy}` })),
+      legend: [{ c: PALETTE[0], t: "Orientation A" }, ...(b.pack.blocks.some(x => x.o) ? [{ c: PALETTE[1], t: "Orientation B (rotated 90°)" }] : []),
+        ...(res.extra ? [{ c: PALETTE[4], t: "Extra (adjusted)" }] : [])],
+      caption: `${fmt(b.perLayer)} per layer × ${b.layers} layers`
+    });
+  }
+
+  // Capacity by vehicle
+  const rows = S.vehicles.map(x => ({ x, r: calcSingle(x, box) }));
+  const costs = rows.filter(o => o.r.ok && hasRate(o.x)).map(o => o.x.rate / o.r.final);
+  const minCost = costs.length ? Math.min(...costs) : null;
+  $("s-allveh").innerHTML = `<tr><th>Vehicle</th><th class="hide-sm">Internal (ft)</th><th class="num">Per layer</th><th class="num">Layers</th><th class="num">Total</th><th class="num">₹ / box</th></tr>` +
+    rows.map(({ x, r }) => {
+      const cost = r.ok && hasRate(x) ? x.rate / r.final : null;
+      const cheapest = cost !== null && cost === minCost;
+      return `<tr class="click ${x.id === v.id ? "sel" : ""} ${cheapest ? "best" : ""}" data-veh="${esc(x.id)}">
+        <td>${esc(x.name)}${cheapest ? '<span class="badge">Lowest cost</span>' : ""}</td>
+        <td class="hide-sm">${x.L} × ${x.W} × ${x.H}</td>
+        <td class="num">${r.ok ? fmt(r.best.perLayer) : "—"}</td><td class="num">${r.ok ? r.best.layers : "—"}</td>
+        <td class="num">${r.ok ? fmt(r.final) + (r.base < r.best.total ? " (payload)" : "") + (r.extra ? ` (+${fmt(r.extra)} adj.)` : "") : "Does not fit"}</td>
+        <td class="num">${cost !== null ? "₹" + fmt(cost, 2) : "—"}</td></tr>`;
+    }).join("");
+}
+
+// ============================================================
+// MODE: pallets
+// ============================================================
+// Pallet footprint and loaded height for vehicle v; builds the pallet from boxes when box size is given.
+function palletSpec(v) {
+  const p = S.pallet, u = TO_MM[p.unit], tr = truckOf(v, !!p.block);
+  const spec = { L: toMM(p.L, p.unit), W: toMM(p.W, p.unit), base: toMM(p.base || 0, p.unit), H: toMM(p.H, p.unit), boxes: 0, auto: false };
+  const b = { L: toMM(p.bL, p.unit), W: toMM(p.bW, p.unit), H: toMM(p.bH, p.unit) };
+  if (b.L > 0 && b.W > 0 && b.H > 0) {
+    const levels = p.stack ? Math.max(1, parseInt(p.maxS) || 1) : 1;
+    const maxLoad = +p.maxLoad > 0 ? +p.maxLoad * u : (tr.valid ? Math.floor(tr.U.H / levels) - spec.base : 0);
+    const pack = pack2D(spec.L + FIT_TOL, spec.W + FIT_TOL, b.L, b.W, true);
+    const layers = Math.max(0, Math.floor((maxLoad + FIT_TOL) / b.H));
+    Object.assign(spec, { auto: true, box: b, boxPack: pack, boxLayers: layers, boxes: pack.count * layers, H: spec.base + layers * b.H });
+  }
+  return spec;
+}
+function calcPallet(v) {
+  const p = S.pallet, spec = palletSpec(v), conv = convFor(p.unit);
+  if (!(spec.L > 0 && spec.W > 0 && spec.H > 0)) return { v, ok: false, spec, error: "Enter pallet dimensions." };
+  if (spec.auto && spec.boxPack.count === 0)
+    return { v, ok: false, spec, error: `Box (${conv(spec.box.L)} × ${conv(spec.box.W)}) is larger than the pallet deck (${conv(spec.L)} × ${conv(spec.W)}).` };
+  if (spec.auto && spec.boxLayers === 0)
+    return { v, ok: false, spec, error: +p.maxLoad > 0 ? `Max load height (${conv(+p.maxLoad * TO_MM[p.unit])}) is lower than the box height (${conv(spec.box.H)}).` : `Box height (${conv(spec.box.H)}) exceeds the usable height of ${v.name}.` };
+  // Pallets are never shuffled into gaps (forklift access, no stacking unless Stackable), so no adjust fill here.
+  const r = calcSingle(v, { L: spec.L, W: spec.W, H: spec.H, up: true, rot: p.rot, maxL: p.stack ? Math.max(1, parseInt(p.maxS) || 1) : 1, wt: +p.wt || 0, block: !!p.block, noFill: true });
+  if (!r.ok && r.error.startsWith("Box does not fit")) {
+    const tr = truckOf(v, !!p.block);
+    if (tr.valid && spec.H > tr.U.H) r.error = `Loaded pallet height (${conv(spec.H)}) exceeds the usable height of ${v.name} (${conv(tr.U.H)}, after the top air gap).`;
+    else if (tr.valid) r.error = `Pallet (${conv(spec.L)} × ${conv(spec.W)}) does not fit on the floor of ${v.name}.`;
+  }
+  if (!r.ok) r.error = r.error.replace("Enter all box dimensions", "Enter pallet dimensions");
+  r.spec = spec;
+  return r;
+}
+function renderPallet() {
+  const p = S.pallet;
+  const v = S.vehicles.find(x => x.id === p.veh) || S.vehicles[0];
+  if (v) p.veh = v.id;
+  $("p-vehicles").innerHTML = S.vehicles.map(x => `<button data-id="${esc(x.id)}" class="${v && x.id === v.id ? "active" : ""}">${esc(x.name)}</button>`).join("");
+  $("p-stackrow").classList.toggle("hidden", !p.stack);
+  if (!v) { $("p-stats").innerHTML = ""; $("p-msgs").innerHTML = `<div class="msg">Add a vehicle in the Vehicles tab.</div>`; return; }
+  $("p-vehinfo").innerHTML = `Internal: ${v.L} × ${v.W} × ${v.H} ft · Payload ${fmt(+v.kg || 0)} kg${hasRate(v) ? ` · ₹${fmt(v.rate)}/trip` : ""} · ${acInfo(v)} · <a href="#" data-goto="settings">Edit</a>`;
+  const res = calcPallet(v), spec = res.spec, conv = convFor(p.unit);
+  $("p-H").disabled = spec.auto;
+  $("p-hnote").textContent = spec.auto && spec.boxes > 0 ? `${fmt(spec.boxes)} boxes per pallet. Loaded height calculated from boxes: ${conv(spec.H)} (base ${conv(spec.base)} + ${spec.boxLayers} × ${conv(spec.box.H)}).` : "";
+  $("p-printtitle").textContent = `Pallet Load Plan — ${v.name} vehicle, pallet ${p.L} × ${p.W} ${UNIT_NAME[p.unit]}`;
+
+  if (!res.ok) {
+    $("p-stats").innerHTML = `<div class="stat main"><div class="v">0</div><div class="k">Total pallets</div></div>`;
+    $("p-msgs").innerHTML = `<div class="msg">${res.error}</div>`;
+    $("p-steps").innerHTML = "";
+    viewers.pallet.show(null);
+  } else {
+    const b = res.best, floorUse = b.perLayer * spec.L * spec.W / (res.T.L * res.T.W) * 100;
+    $("p-stats").innerHTML = `
+      <div class="stat main"><div class="v">${fmt(res.final)}</div><div class="k">Total pallets</div></div>
+      <div class="stat"><div class="v">${fmt(b.perLayer)}</div><div class="k">Floor positions</div></div>
+      <div class="stat"><div class="v">${b.layers}</div><div class="k">Stack levels</div></div>
+      <div class="stat"><div class="v">${fmt(floorUse, 1)}%</div><div class="k">Floor utilisation</div></div>
+      ${spec.auto ? `<div class="stat"><div class="v">${fmt(res.final * spec.boxes)}</div><div class="k">Total boxes (${fmt(spec.boxes)}/pallet)</div></div>` : ""}
+      ${+p.wt > 0 ? `<div class="stat"><div class="v">${fmt(res.final * p.wt)} kg</div><div class="k">Total weight</div></div>` : ""}
+      ${hasRate(v) ? `<div class="stat"><div class="v">₹${fmt(v.rate / res.final, 0)}</div><div class="k">Freight per pallet</div></div>` : ""}`;
+    const m = [];
+    if (p.block) {
+      const saved = p.block; p.block = false;
+      const normal = calcPallet(v);
+      p.block = saved;
+      const gain = res.final - (normal.ok ? normal.final : 0);
+      m.push(`<div class="msg"><b>AC airflow blocked:</b> top air gap and AC clearance used — <b>${gain > 0 ? `+${fmt(gain)} pallets` : "no extra pallets"}</b>${spec.auto && normal.ok ? ` (${fmt(res.final * spec.boxes - normal.final * normal.spec.boxes)} more boxes)` : ""} vs normal loading. Cold air cannot circulate; use only for pre-cooled cargo on short trips.</div>`);
+    }
+    if (res.final < b.total) m.push(`<div class="msg">Space allows ${fmt(b.total)} pallets; payload limit (${fmt(v.kg)} kg) caps the load at <b>${fmt(res.final)}</b>.</div>`);
+    if (p.stack && b.layers < (parseInt(p.maxS) || 1)) m.push(`<div class="msg">Vehicle height allows only ${b.layers} stack level${b.layers > 1 ? "s" : ""}.</div>`);
+    const usedL = Math.max(...b.pack.blocks.map(bl => bl.x + bl.cx * bl.pa)), usedW = Math.max(...b.pack.blocks.map(bl => bl.y + bl.cy * bl.pb));
+    m.push(`<div class="msg ok">Unused space — length: ${cm(Math.max(0, res.T.L - usedL))}, width: ${cm(Math.max(0, res.T.W - usedW))}, height: ${cm(Math.max(0, res.T.H - b.layers * b.h))}.</div>`);
+    $("p-msgs").innerHTML = m.join("");
+
+    const palletText = bl => `<b>${conv(bl.pa)}</b> side along truck length, <b>${conv(bl.pb)}</b> across — <b>${bl.cx}</b> × <b>${bl.cy}</b> = <b>${bl.count}</b> pallet${bl.count === 1 ? "" : "s"}`;
+    const steps = [];
+    if (spec.auto) steps.push(`Build each pallet: ${spec.boxPack.blocks.map(bl => blockText(bl, conv).replace("truck length", "pallet length")).join("; ")} per layer, ${spec.boxLayers} layers = <b>${fmt(spec.boxes)}</b> boxes. No overhang.`);
+    steps.push(`Load from the front wall (cabin side). ${res.gaps.side > 0 ? `Leave ${cm(res.gaps.side)} on each side.` : "Keep pallets flush against one side wall."}`);
+    b.pack.blocks.forEach((bl, n) => steps.push(`<span class="sw" style="background:${bl.o ? PALETTE[5] : PALETTE[2]}"></span><b>Block ${n + 1}</b> (from front ${cm(bl.x)}–${cm(bl.x + bl.cx * bl.pa)}, from side ${cm(bl.y)}–${cm(bl.y + bl.cy * bl.pb)}): ${palletText(bl)}.`));
+    if (b.layers > 1) steps.push(`Stack <b>${b.layers}</b> levels (${conv(b.h)} each).`);
+    const acS = acStep(res.ac, b, "pallets");
+    if (acS) steps.push(acS);
+    steps.push(`${topGapText(res.gaps)} Total: ${fmt(b.perLayer)} × ${b.layers}${b.acLoss ? ` − ${fmt(b.acLoss)} under AC unit` : ""} = <b>${fmt(b.total)}</b> pallets${res.final < b.total ? ` (stop at ${fmt(res.final)} — payload limit)` : ""}.`);
+    $("p-steps").innerHTML = steps.map(s => `<li>${s}</li>`).join("");
+
+    viewers.pallet.show({
+      T: res.T, gaps: res.gaps, ac: res.ac, list: placeAvoidingAC(b.pack, b, 0, res.final, PALETTE[2], PALETTE[5], res.ac),
+      labels: b.pack.blocks.map((bl, n) => ({ x: bl.x, y: bl.y, w: bl.cx * bl.pa, d: bl.cy * bl.pb, text: `${n + 1}: ${bl.cx}×${bl.cy}` })),
+      legend: [{ c: PALETTE[2], t: "Orientation A" }, ...(b.pack.blocks.some(x => x.o) ? [{ c: PALETTE[5], t: "Orientation B (rotated 90°)" }] : [])],
+      caption: `${fmt(b.perLayer)} floor positions × ${b.layers} level${b.layers > 1 ? "s" : ""}`
+    });
+  }
+
+  const rows = S.vehicles.map(x => ({ x, r: calcPallet(x) }));
+  const costs = rows.filter(o => o.r.ok && hasRate(o.x)).map(o => o.x.rate / o.r.final);
+  const minCost = costs.length ? Math.min(...costs) : null;
+  $("p-allveh").innerHTML = `<tr><th>Vehicle</th><th class="num">Floor</th><th class="num">Levels</th><th class="num">Pallets</th>${spec.auto ? '<th class="num">Boxes/pallet</th><th class="num">Total boxes</th>' : ""}<th class="num">₹ / pallet</th></tr>` +
+    rows.map(({ x, r }) => {
+      const cost = r.ok && hasRate(x) ? x.rate / r.final : null, cheapest = cost !== null && cost === minCost;
+      return `<tr class="click ${x.id === v.id ? "sel" : ""} ${cheapest ? "best" : ""}" data-veh="${esc(x.id)}">
+        <td>${esc(x.name)}${cheapest ? '<span class="badge">Lowest cost</span>' : ""}</td>
+        <td class="num">${r.ok ? fmt(r.best.perLayer) : "—"}</td><td class="num">${r.ok ? r.best.layers : "—"}</td>
+        <td class="num">${r.ok ? fmt(r.final) + (r.final < r.best.total ? " (payload)" : "") : "Does not fit"}</td>
+        ${spec.auto ? `<td class="num">${r.ok ? fmt(r.spec.boxes) : "—"}</td><td class="num">${r.ok ? fmt(r.final * r.spec.boxes) : "—"}</td>` : ""}
+        <td class="num">${cost !== null ? "₹" + fmt(cost, 0) : "—"}</td></tr>`;
+    }).join("");
+}
+
+// ============================================================
+// MODE 2: load planner (multiple box types, multiple trucks)
+// ============================================================
+function mixTypes() {
+  return S.mix.items.map((it, i) => ({
+    i, name: it.name || `Box ${i + 1}`, color: PALETTE[i % PALETTE.length], unit: it.unit || S.mix.unit,
+    L: toMM(it.L, it.unit || S.mix.unit), W: toMM(it.W, it.unit || S.mix.unit), H: toMM(it.H, it.unit || S.mix.unit),
+    qty: Math.max(0, Math.floor(+it.qty || 0)), wt: +it.wt || 0, maxL: parseInt(it.maxL) || 0, up: !!it.up, rot: !!it.rot
+  })).filter(t => t.L > 0 && t.W > 0 && t.H > 0 && t.qty > 0);
+}
+// Most boxes of type t that fit in a section of length R.
+// A section starting at x0 loses the stacks that reach into the AC zone.
+function capacity(t, R, U, x0 = 0, ac = null) {
+  let best = 0;
+  for (const o of standOptions(t, U)) {
+    const p = pack2D(R, U.W, o.f1, o.f2, t.rot);
+    best = Math.max(best, p.count * o.layers - acLoss(p, o.layers, o.h, x0, ac));
+  }
+  return best;
+}
+// Shortest section (from x0 towards the door) that holds n boxes of type t.
+function shortestSection(t, n, R, U, x0 = 0, ac = null) {
+  let best = null;
+  for (const o of standOptions(t, U)) {
+    const X = rasterPoints(R, o.f1, o.f2, t.rot).filter(x => x > 0);
+    const cnt = x => { const p = pack2D(x, U.W, o.f1, o.f2, t.rot); return p.count * o.layers - acLoss(p, o.layers, o.h, x0, ac); };
+    if (!X.length || cnt(X[X.length - 1]) < n) continue;
+    let lo = 0, hi = X.length - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (cnt(X[m]) >= n) hi = m; else lo = m + 1; }
+    if (!best || X[lo] < best.len || (X[lo] === best.len && o.up === 2)) best = { len: X[lo], opt: o, pack: pack2D(X[lo], U.W, o.f1, o.f2, t.rot) };
+  }
+  return best;
+}
+// Fill as many trucks of vehicle v as needed for the given quantities.
+function packTrucks(v, types, qtys) {
+  const tr = truckOf(v, !!S.mix.block);
+  if (!tr.valid) return { error: "invalid dimensions" };
+  const unfit = types.filter(t => qtys[t.i] > 0 && (capacity(t, tr.U.L, tr.U, 0, tr.ac) === 0 || (t.wt > 0 && +v.kg > 0 && t.wt > +v.kg)));
+  if (unfit.length) return { error: unfit.map(t => t.name).join(", ") + " does not fit" };
+  const rem = { ...qtys }, trucks = [];
+  while (types.some(t => rem[t.i] > 0)) {
+    if (trucks.length >= 200) return { error: "more than 200 vehicles required" };
+    let R = tr.U.L, x0 = 0, wt = 0;
+    const sections = [];
+    for (const t of types) {
+      if (rem[t.i] <= 0 || R <= 0) continue;
+      const wLeft = +v.kg > 0 && t.wt > 0 ? Math.floor((+v.kg - wt) / t.wt) : Infinity;
+      const n = Math.min(rem[t.i], capacity(t, R, tr.U, x0, tr.ac), wLeft);
+      if (n <= 0) continue;
+      const sec = shortestSection(t, n, R, tr.U, x0, tr.ac);
+      if (!sec) continue;
+      sections.push({ t, n, x0, ...sec });
+      x0 += sec.len; R -= sec.len; wt += n * t.wt; rem[t.i] -= n;
+    }
+    if (!sections.length) return { error: "could not be loaded" };
+    sections.forEach(s => s.list = placeAvoidingAC(s.pack, s.opt, s.x0, s.n, s.t.color, shade(s.t.color, -0.12), tr.ac));
+    const fills = S.mix.fill ? fillSpaces(v, tr, sections, types, rem, wt) : [];
+    fills.forEach(f => { rem[f.t.i] -= f.n; wt += f.n * f.t.wt; });
+    let extras = [];
+    if ((S.mix.adjust || S.mix.block) && types.some(t => rem[t.i] > 0)) {
+      const C = { x: 0, y: 0, z: 0, l: tr.U.L, w: tr.U.W, h: tr.U.H }, occ = [];
+      // Section blocks are occupied to full stack height; a block can carry extras only if every stack in it is complete.
+      sections.forEach(s => s.pack.blocks.forEach(bl => {
+        const c = { x: s.x0 + bl.x, y: bl.y, z: 0, l: bl.cx * bl.pa, w: bl.cy * bl.pb, h: s.opt.layers * s.opt.h };
+        const inside = s.list.filter(p => p.x >= c.x && p.x < c.x + c.l && p.y >= c.y && p.y < c.y + c.w).length;
+        occ.push({ ...c, solid: inside === bl.cx * bl.cy * s.opt.layers });
+      }));
+      fills.forEach(f => occ.push({ ...bbox3(f.list), solid: false }));
+      if (tr.ac) occ.push(acCuboid(tr.ac, C));
+      const items = types.filter(t => rem[t.i] > 0).map(t => ({ t, left: rem[t.i], color: shade(t.color, 0.18) }));
+      extras = adjustFill(C, occ, items, +v.kg > 0 ? +v.kg - wt : Infinity);
+      extras.forEach(e => { rem[e.t.i] -= e.n; wt += e.n * e.t.wt; });
+    }
+    const byType = {};
+    [...sections, ...fills, ...extras].forEach(x => byType[x.t.i] = (byType[x.t.i] || 0) + x.n);
+    trucks.push({ v, tr, sections, fills, extras, wt, byType, count: Object.values(byType).reduce((a, b) => a + b, 0) });
+  }
+  return { trucks };
+}
+// Empty spaces left by a section: above its complete stacks, and the strip beside it along the side wall.
+function sectionSpaces(sec, U) {
+  const out = [];
+  const usedW = Math.max(...sec.pack.blocks.map(b => b.y + b.cy * b.pb));
+  if (U.W - usedW > 0) out.push({ kind: "side", sec, x: sec.x0, y: usedW, z: 0, L: sec.len, W: U.W - usedW, H: U.H });
+  const topZ = sec.opt.layers * sec.opt.h;
+  const stack = new Map();
+  sec.list.forEach(p => { const k = p.x + "|" + p.y; stack.set(k, (stack.get(k) || 0) + 1); });
+  const support = sec.list.filter(p => p.z === 0 && stack.get(p.x + "|" + p.y) === sec.opt.layers);
+  // A Max layers limit means "nothing more on top" — only fill above stacks that stopped because of height.
+  const capped = sec.t.maxL > 0 && sec.opt.layers >= sec.t.maxL;
+  if (!capped && U.H - topZ > 0 && support.length) out.push({ kind: "top", sec, x: sec.x0, y: 0, z: topZ, L: sec.len, W: usedW, H: U.H - topZ, support });
+  return out;
+}
+// Fill each empty space with whichever remaining box type uses the most volume there.
+function fillSpaces(v, tr, sections, types, rem, wt) {
+  const fills = [], left = { ...rem };
+  for (const sec of sections) for (const sp of sectionSpaces(sec, tr.U)) {
+    let best = null;
+    for (const t of types) {
+      if (left[t.i] <= 0) continue;
+      const wLeft = +v.kg > 0 && t.wt > 0 ? Math.floor((+v.kg - wt) / t.wt) : Infinity;
+      if (wLeft <= 0) continue;
+      for (const o of standOptions(t, { H: sp.H })) {
+        const pack = pack2D(sp.L, sp.W, o.f1, o.f2, t.rot);
+        if (!pack.count) continue;
+        const ok = sp.kind === "top" ? p => isSupported(p, sp.support) : null;
+        const n0 = Math.min(left[t.i], wLeft);
+        const list = placeAvoidingAC(pack, o, sp.x, n0, t.color, shade(t.color, -0.12), tr.ac, sp.y, sp.z, ok);
+        const vol = list.length * t.L * t.W * t.H;
+        if (list.length && (!best || vol > best.vol)) best = { t, opt: o, pack, sp, list, n: list.length, vol };
+      }
+    }
+    if (best) { fills.push(best); left[best.t.i] -= best.n; wt += best.n * best.t.wt; }
+  }
+  return fills;
+}
+function planCost(trucks) {
+  const allRates = trucks.every(t => hasRate(t.v));
+  return { cost: allRates ? trucks.reduce((s, t) => s + +t.v.rate, 0) : null, vol: trucks.reduce((s, t) => s + vehVolume(t.v), 0) };
+}
+function planName(trucks) {
+  const c = {};
+  trucks.forEach(t => c[t.v.name] = (c[t.v.name] || 0) + 1);
+  return Object.entries(c).map(([n, k]) => `${k} × ${n}`).join(" + ");
+}
+let mixPlans = [], selPlan = 0, selTruck = 0;
+function computePlans() {
+  const types = mixTypes();
+  const qtys = {}; types.forEach(t => qtys[t.i] = t.qty);
+  const target = S.vehicles.find(v => v.id === S.mix.target);
+  const vehs = target ? [target] : S.vehicles.filter(v => !S.mix.off[v.id]);
+  const plans = [], failures = [];
+  const singles = {};
+  for (const v of vehs) {
+    const r = packTrucks(v, types, qtys);
+    if (r.error) { failures.push(`${v.name}: ${r.error}`); continue; }
+    singles[v.id] = r.trucks;
+    plans.push({ trucks: r.trucks });
+  }
+  // Combos: full loads on one vehicle type, the final partial load moved to a cheaper/smaller vehicle.
+  for (const v of vehs) {
+    const tr = singles[v.id];
+    if (!tr || tr.length < 2) continue;
+    const last = tr[tr.length - 1], lastQ = {};
+    types.forEach(t => lastQ[t.i] = last.byType[t.i] || 0);
+    for (const s of vehs) {
+      if (s.id === v.id) continue;
+      const cheaper = hasRate(s) && hasRate(v) ? +s.rate < +v.rate : vehVolume(s) < vehVolume(v);
+      if (!cheaper) continue;
+      const r = packTrucks(s, types, lastQ);
+      if (!r.error && r.trucks.length === 1) plans.push({ trucks: [...tr.slice(0, -1), r.trucks[0]] });
+    }
+  }
+  const seen = new Set(), key = p => p.trucks.map(t => t.v.id).sort().join("|");
+  const out = plans.map(p => ({ ...p, ...planCost(p.trucks), name: planName(p.trucks) }))
+    .filter(p => !seen.has(key(p)) && seen.add(key(p)));
+  const allCost = out.length && out.every(p => p.cost !== null);
+  out.sort((a, b) => allCost ? a.cost - b.cost || a.trucks.length - b.trucks.length : a.trucks.length - b.trucks.length || a.vol - b.vol);
+  const fitsOne = S.vehicles.filter(v => singles[v.id] && singles[v.id].length === 1).sort((a, b) => vehVolume(a) - vehVolume(b)).map(v => v.name);
+  const skipped = S.mix.items.filter((it, i) => !types.some(t => t.i === i)).map((it, i) => it.name || "Unnamed box");
+  return { plans: out, failures, types, allCost, target, fitsOne, skipped, noVehicles: !vehs.length };
+}
+let mixTimer;
+function scheduleMix() { clearTimeout(mixTimer); mixTimer = setTimeout(renderMix, 150); }
+function renderMix() {
+  renderMixInputs(false);
+  const { plans, failures, types, allCost, target, fitsOne, skipped, noVehicles } = computePlans();
+  mixPlans = plans;
+  if (selPlan >= plans.length) selPlan = 0;
+  const totalBoxes = types.reduce((s, t) => s + t.qty, 0);
+  const totalWt = types.reduce((s, t) => s + t.qty * t.wt, 0);
+  $("m-printtitle").textContent = "Load Plan — " + types.map(t => `${t.name}: ${fmt(t.qty)}`).join(", ");
+  if (!types.length) {
+    $("m-stats").innerHTML = ""; $("m-plans").innerHTML = ""; $("m-trucks").innerHTML = ""; $("m-steps").innerHTML = ""; $("m-truckinfo").textContent = "";
+    $("m-msgs").innerHTML = `<div class="msg">Enter dimensions and quantity for at least one box type.</div>`;
+    viewers.mix.show(null); return;
+  }
+  const best = plans[0];
+  $("m-stats").innerHTML = `
+    <div class="stat main"><div class="v">${best ? best.trucks.length : "—"}</div><div class="k">Vehicles required</div></div>
+    <div class="stat"><div class="v">${fmt(totalBoxes)}</div><div class="k">Total boxes</div></div>
+    ${totalWt > 0 ? `<div class="stat"><div class="v">${fmt(totalWt)} kg</div><div class="k">Total weight</div></div>` : ""}
+    ${best && best.cost !== null ? `<div class="stat"><div class="v">₹${fmt(best.cost)}</div><div class="k">Total freight</div></div>` : ""}`;
+  const m = [];
+  const contents = t => types.filter(x => t.byType[x.i]).map(x => `${esc(x.name)} ${fmt(t.byType[x.i])}`).join(", ");
+  if (target && best) {
+    if (best.trucks.length === 1) m.push(`<div class="msg ok">All ${fmt(totalBoxes)} boxes fit in one ${esc(target.name)} vehicle.</div>`);
+    else {
+      const first = best.trucks[0];
+      const over = types.map(x => ({ x, n: x.qty - (first.byType[x.i] || 0) })).filter(o => o.n > 0);
+      m.push(`<div class="msg">Does not fit in one ${esc(target.name)}. One vehicle carries: ${contents(first)}. Remaining: <b>${over.map(o => `${esc(o.x.name)} ${fmt(o.n)}`).join(", ")}</b> — ${best.trucks.length} × ${esc(target.name)} required.</div>`);
+    }
+  } else if (best) {
+    if (fitsOne.length) m.push(`<div class="msg ok"><b>✔ Fits in one vehicle.</b> Smallest vehicle: <b>${esc(fitsOne[0])}</b>${fitsOne.length > 1 ? ` (also fits: ${fitsOne.slice(1).map(esc).join(", ")})` : ""}.</div>`);
+    else m.push(`<div class="msg"><b>✘ Does not fit in any single vehicle.</b> Send: <b>${esc(best.name)}</b>.</div>`);
+    m.push(`<div class="msg ok">Recommended: <b>${esc(best.name)}</b>${best.cost !== null ? ` — ₹${fmt(best.cost)}` : ""}.${allCost ? "" : " Freight rates not set; ranked by fewest and smallest vehicles."}</div>`);
+  }
+  if (S.mix.block) m.push(`<div class="msg"><b>AC airflow blocked:</b> top air gap and AC clearance used for cargo, with extra boxes adjusted in. Cold air cannot circulate, so cargo may warm up; use only for pre-cooled cargo on short trips.</div>`);
+  if (skipped.length) m.push(`<div class="msg">Not included (missing dimensions or quantity): <b>${skipped.map(esc).join(", ")}</b>.</div>`);
+  if (failures.length) m.push(`<div class="msg">Not feasible — ${failures.map(esc).join("; ")}.</div>`);
+  if (noVehicles) m.push(`<div class="msg">Select at least one vehicle under Allowed vehicles.</div>`);
+  else if (!plans.length) m.push(`<div class="msg">No feasible plan. Check box and vehicle dimensions.</div>`);
+  $("m-msgs").innerHTML = m.join("");
+
+  $("m-plans").innerHTML = plans.length ? `<tr><th>Plan</th><th class="num">Vehicles</th><th class="num">Freight</th><th class="num">Avg. fill</th></tr>` +
+    plans.slice(0, 12).map((p, i) => {
+      const fill = p.trucks.reduce((s, t) => s + truckFill(t), 0) / p.trucks.length;
+      return `<tr class="click ${i === selPlan ? "sel" : ""} ${i === 0 ? "best" : ""}" data-plan="${i}"><td>${esc(p.name)}${i === 0 ? '<span class="badge">Recommended</span>' : ""}</td>
+        <td class="num">${p.trucks.length}</td><td class="num">${p.cost !== null ? "₹" + fmt(p.cost) : "—"}</td><td class="num">${fmt(fill, 0)}%</td></tr>`;
+    }).join("") : "";
+  renderTruck();
+}
+function truckFill(t) {
+  const bv = [...t.sections, ...t.fills, ...t.extras].reduce((s, x) => s + x.n * x.t.L * x.t.W * x.t.H, 0);
+  return bv / (t.tr.T.L * t.tr.T.W * t.tr.T.H) * 100;
+}
+function renderTruck() {
+  const p = mixPlans[selPlan];
+  if (!p) { $("m-trucks").innerHTML = ""; $("m-steps").innerHTML = ""; $("m-truckinfo").textContent = ""; viewers.mix.show(null); return; }
+  if (selTruck >= p.trucks.length) selTruck = 0;
+  $("m-trucks").innerHTML = p.trucks.map((t, i) => `<button data-truck="${i}" class="${i === selTruck ? "active" : ""}">Truck ${i + 1} <small>${esc(t.v.name)} · ${fmt(t.count)} boxes</small></button>`).join("");
+  const t = p.trucks[selTruck];
+  const allTypes = mixTypes();
+  $("m-truckinfo").innerHTML = `<b>Truck ${selTruck + 1} (${esc(t.v.name)})</b> — ${allTypes.filter(x => t.byType[x.i]).map(x => `<span class="sw" style="background:${x.color}"></span>${esc(x.name)}: <b>${fmt(t.byType[x.i])}</b>`).join(" · ")}
+    <br>${fmt(t.count)} boxes · ${fmt(truckFill(t), 1)}% space used${t.wt > 0 ? ` · ${fmt(t.wt)} / ${fmt(t.v.kg)} kg` : ""} · Free length at door: ${cm(t.tr.T.L - t.sections.reduce((s, x) => Math.max(s, x.x0 + x.len), 0))}`;
+
+  const steps = [`Load section by section, starting at the front wall (cabin side).`];
+  let list = [];
+  const labels = [];
+  t.sections.forEach((s, k) => {
+    const conv = convFor(s.t.unit); // box sizes in the unit this box was entered in
+    const cap = s.pack.count * s.opt.layers - acLoss(s.pack, s.opt.layers, s.opt.h, s.x0, t.tr.ac);
+    const acS = t.tr.ac && s.x0 < t.tr.ac.ob.x2 ? acStep(t.tr.ac, s.opt, "boxes", s.x0) : "";
+    const sub = s.pack.blocks.map(bl => `<li>${s.pack.blocks.length > 1 ? `From front ${cm(s.x0 + bl.x)}–${cm(s.x0 + bl.x + bl.cx * bl.pa)}, from side ${cm(bl.y)}–${cm(bl.y + bl.cy * bl.pb)}: ` : ""}${blockText(bl, conv)} per layer</li>`).join("");
+    steps.push(`<span class="sw" style="background:${s.t.color}"></span><b>Section ${k + 1}: ${esc(s.t.name)} — ${fmt(s.n)} ${plural(s.n, "box", "boxes")}</b> (from front ${cm(s.x0)}–${cm(s.x0 + s.len)})
+      ${s.opt.up !== 2 ? `<br>Boxes on side — ${SIDE_NAME[s.opt.up]} (${conv(s.opt.h)}) vertical.` : ""}
+      <ul>${sub}<li>${s.opt.layers === 1 ? "Single layer (no stacking)" : `Stack up to ${s.opt.layers} layers`}${s.n < cap ? ` (last row: ${fmt(cap - s.n)} ${plural(cap - s.n, "position", "positions")} empty)` : ""}</li>${acS ? `<li>${acS}</li>` : ""}</ul>`);
+    list = list.concat(s.list);
+    labels.push({ x: s.x0, y: 0, w: s.len, d: Math.max(...s.pack.blocks.map(bl => bl.y + bl.cy * bl.pb)), text: `${k + 1}: ${s.t.name}`, section: true });
+  });
+  t.fills.forEach(f => {
+    const conv = convFor(f.t.unit);
+    const secNo = t.sections.indexOf(f.sp.sec) + 1;
+    const xs = f.list.map(p => p.x), ys = f.list.map(p => p.y);
+    const x1 = Math.min(...xs), x2 = Math.max(...f.list.map(p => p.x + p.l));
+    const where = f.sp.kind === "top"
+      ? `on top of Section ${secNo}, from front ${cm(x1)}–${cm(x2)}, starting at height ${cm(f.sp.z)}`
+      : `in the side gap of Section ${secNo}, from front ${cm(x1)}–${cm(x2)}, from side ${cm(Math.min(...ys))}`;
+    const layers = Math.max(...f.list.map(p => Math.round((p.z - f.sp.z) / f.opt.h))) + 1;
+    steps.push(`<span class="sw" style="background:${f.t.color}"></span><b>Fill: ${esc(f.t.name)} — ${fmt(f.n)} boxes</b> ${where}.
+      ${f.opt.up !== 2 ? `<br>Boxes on side — ${SIDE_NAME[f.opt.up]} (${conv(f.opt.h)}) vertical.` : ""}
+      <ul>${f.pack.blocks.map(bl => `<li>${f.pack.blocks.length > 1 ? `From front ${cm(f.sp.x + bl.x)}–${cm(f.sp.x + bl.x + bl.cx * bl.pa)}, from side ${cm(f.sp.y + bl.y)}–${cm(f.sp.y + bl.y + bl.cy * bl.pb)}: ` : ""}${blockText(bl, conv)} per layer</li>`).join("")}<li>${layers} layer${layers > 1 ? "s" : ""}</li></ul>`);
+    list = list.concat(f.list);
+  });
+  t.extras.forEach(e => { steps.push(...extraSteps([e], convFor(e.t.unit), x => x.name)); list = list.concat(e.list); });
+  steps.push(`${topGapText(t.tr.gaps)} Secure open spaces with dunnage or airbags.`);
+  $("m-steps").innerHTML = steps.map(s => `<li>${s}</li>`).join("");
+  const types = [...new Map([...t.sections, ...t.fills, ...t.extras].map(s => [s.t.i, s.t])).values()];
+  viewers.mix.show({ T: t.tr.T, gaps: t.tr.gaps, ac: t.tr.ac, list, labels,
+    legend: types.map(x => ({ c: x.color, t: x.name })).concat(t.extras.length ? [{ c: shade(t.extras[0].t.color, 0.18), t: "Extra (adjusted, lighter shade)" }] : []), caption: `Truck ${selTruck + 1}: ${fmt(t.count)} boxes` });
+}
+
+function renderMixInputs(full = true) {
+  $("m-fill").checked = S.mix.fill;
+  $("m-adjust").checked = !!S.mix.adjust;
+  $("m-block").checked = !!S.mix.block;
+  if (S.mix.target !== "auto" && !S.vehicles.some(v => v.id === S.mix.target)) S.mix.target = "auto";
+  $("m-target").innerHTML = `<option value="auto">Auto — recommend best plan</option>` +
+    S.vehicles.map(v => `<option value="${esc(v.id)}">${esc(v.name)} — check this vehicle</option>`).join("");
+  $("m-target").value = S.mix.target;
+  $("m-autoveh").classList.toggle("hidden", S.mix.target !== "auto");
+  $("m-vehicles").innerHTML = S.vehicles.map(v => `<button data-id="${esc(v.id)}" class="${S.mix.off[v.id] ? "" : "active"}">${esc(v.name)}</button>`).join("");
+  if (!full) return;
+  $("m-items").innerHTML = S.mix.items.map((it, i) => `
+    <div class="item" style="--c:${PALETTE[i % PALETTE.length]}" data-i="${i}">
+      <div class="top"><input type="text" data-f="name" value="${esc(it.name)}" aria-label="Name">
+        <select data-f="unit" aria-label="Unit" style="width:auto">${["cm", "in", "mm", "ft"].map(u => `<option value="${u}" ${(it.unit || S.mix.unit) === u ? "selected" : ""}>${u}</option>`).join("")}</select>
+        ${S.mix.items.length > 1 ? `<button class="btn danger" data-del="${i}" title="Remove">✕</button>` : ""}</div>
+      <div class="row">
+        <div><label>Length</label><input type="number" step="any" min="0" data-f="L" value="${esc(it.L)}"></div>
+        <div><label>Width</label><input type="number" step="any" min="0" data-f="W" value="${esc(it.W)}"></div>
+        <div><label>Height</label><input type="number" step="any" min="0" data-f="H" value="${esc(it.H)}"></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <div><label>Quantity</label><input type="number" step="1" min="0" data-f="qty" value="${esc(it.qty)}"></div>
+        <div><label>Weight/box (kg)</label><input type="number" step="any" min="0" data-f="wt" value="${esc(it.wt)}" placeholder="Optional"></div>
+        <div><label>Max layers</label><input type="number" step="1" min="0" data-f="maxL" value="${esc(it.maxL)}" placeholder="No limit"></div>
+      </div>
+      <label class="check"><input type="checkbox" data-f="rot" ${it.rot ? "checked" : ""}> Allow 90° rotation</label>
+      <label class="check"><input type="checkbox" data-f="up" ${it.up ? "checked" : ""}> This side up</label>
+    </div>`).join("");
+}
+
+// ============================================================
+// MODE 3: vehicles
+// ============================================================
+const VEH_LABELS = { L: "Length (ft)", W: "Width (ft)", H: "Height (ft)", kg: "Payload (kg)", rate: "Freight (₹/trip)", acW: "AC width (cm)", acH: "AC height (cm)", acD: "AC depth (cm)" };
+function renderSettings() {
+  $("v-table").innerHTML = `<tr><th>Name</th>${["L", "W", "H", "kg", "rate"].map(f => `<th>${VEH_LABELS[f]}</th>`).join("")}<th>AC unit</th>${["acW", "acH", "acD"].map(f => `<th>${VEH_LABELS[f]}</th>`).join("")}<th></th></tr>` +
+    S.vehicles.map((v, i) => `<tr data-i="${i}">
+      <td data-label="Name"><input type="text" data-f="name" value="${esc(v.name)}" aria-label="Name"></td>
+      ${["L", "W", "H", "kg", "rate"].map(f => `<td data-label="${VEH_LABELS[f]}"><input type="number" step="any" min="0" data-f="${f}" value="${esc(v[f])}" ${f === "rate" ? 'placeholder="Optional"' : ""}></td>`).join("")}
+      <td data-label="AC unit"><select data-f="acType" aria-label="AC unit">${Object.entries(AC_TYPES).map(([k, t]) => `<option value="${k}" ${(v.acType || "none") === k ? "selected" : ""}>${t}</option>`).join("")}</select></td>
+      ${["acW", "acH", "acD"].map(f => `<td data-label="${VEH_LABELS[f]}"><input type="number" step="any" min="0" data-f="${f}" value="${esc(v[f] ?? "")}" ${v.acType === "none" ? "disabled" : ""}></td>`).join("")}
+      <td><button class="btn danger" data-del="${i}" title="Remove">✕</button></td></tr>`).join("");
+  $("g-top").value = S.gaps.top; $("g-door").value = S.gaps.door; $("g-side").value = S.gaps.side; $("g-ac").value = S.gaps.ac;
+}
+
+// ============================================================
+// Viewer: 3D + top + side views
+// ============================================================
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function Viewer(prefix) {
+  this.p = prefix; this.data = null; this.gl = null;
+  const root = $(prefix + "-viewer");
+  root.innerHTML = `
+    <div class="tabs noprint">
+      <button data-v="3d" class="active">3D</button><button data-v="top">Top</button><button data-v="side">Side</button>
+    </div>
+    <div class="pane" data-pane="3d">
+      <div class="view3d"><div class="fallback">Loading 3D view…</div></div>
+      <div class="slider noprint"><span>Loading sequence</span><input type="range" min="0" max="0" value="0" aria-label="Loading sequence"><span class="steplabel"></span></div>
+      <p class="note noprint">Drag to rotate, scroll to zoom.</p>
+    </div>
+    <div class="pane hidden" data-pane="top"><svg class="topsvg"></svg></div>
+    <div class="pane hidden" data-pane="side"><svg class="sidesvg"></svg></div>
+    <div class="legend"></div>`;
+  this.root = root;
+  root.querySelector(".tabs").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    root.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
+    root.querySelectorAll(".pane").forEach(p => p.classList.toggle("hidden", p.dataset.pane !== b.dataset.v));
+    if (b.dataset.v === "3d" && this.gl) this.gl.resize();
+  });
+}
+// SVGs are drawn at the on-screen width so text stays readable on phones.
+Viewer.prototype.draw2D = function () {
+  const r = this.root, w = r.clientWidth ? Math.min(1000, Math.max(300, r.clientWidth - 24)) : 1000;
+  drawTop(r.querySelector(".topsvg"), this.data, w);
+  drawSide(r.querySelector(".sidesvg"), this.data, w);
+};
+Viewer.prototype.show = function (data) {
+  if (data && data.list.length > MAX_DRAW) data = { ...data, list: data.list.slice(0, MAX_DRAW) };
+  this.data = data;
+  const r = this.root;
+  this.draw2D();
+  r.querySelector(".legend").innerHTML = data ? data.legend.map(l => `<span><span class="sw" style="background:${l.c}"></span>${esc(l.t)}</span>`).join("") +
+    (data.ac ? `<span><span class="sw" style="background:#8a96a8"></span>AC unit (${AC_TYPES[data.ac.type].toLowerCase()})</span>` : "") +
+    (data.list.length >= MAX_DRAW || (data.list.length === 0) ? `<span>Too many boxes to draw individually — counts above are still exact.</span>` : "") : "";
+  if (this.gl) this.gl.update(data);
+};
+Viewer.prototype.attach3D = function (make3D) {
+  const el = this.root.querySelector(".view3d");
+  el.querySelector(".fallback")?.remove();
+  this.gl = make3D(el, this.root.querySelector("input[type=range]"), this.root.querySelector(".steplabel"));
+  this.gl.update(this.data);
+};
+function drawTop(svg, d, W = 1000) {
+  if (!d) { svg.innerHTML = ""; return; }
+  const fs = W < 600 ? 11 : 14, pad = W < 600 ? 8 : 40, top = fs * 2.2;
+  const T = d.T, s = (W - 2 * pad) / T.L, H = T.W * s + top + fs * 2.4, off = d.gaps.side;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  let g = `<g transform="translate(0 ${top - pad})">`;
+  g += `<rect x="${pad}" y="${pad}" width="${T.L * s}" height="${T.W * s}" fill="none" stroke="${css("--truck")}" stroke-width="2"/>`;
+  g += `<text x="${pad}" y="${pad - fs * .7}" font-size="${fs}" fill="${css("--muted")}">◀ CABIN</text>`;
+  g += `<text x="${pad + T.L * s}" y="${pad - fs * .7}" font-size="${fs}" text-anchor="end" fill="${css("--muted")}">DOOR ▶</text>`;
+  // Topmost box at each spot is what you see from above.
+  const topmost = new Map();
+  for (const p of d.list) { const k = p.x + "|" + p.y + "|" + p.l; const q = topmost.get(k); if (!q || p.z > q.z) topmost.set(k, p); }
+  for (const p of [...topmost.values()].sort((a, b) => a.z - b.z))
+    g += `<rect x="${pad + p.x * s}" y="${pad + (off + p.y) * s}" width="${p.l * s}" height="${p.w * s}" fill="${p.color}" fill-opacity=".85" stroke="${css("--card")}" stroke-width="1"/>`;
+  if (d.ac) {
+    const u = d.ac.unit;
+    g += `<rect x="${pad + u.x * s}" y="${pad + u.y * s}" width="${u.l * s}" height="${u.w * s}" fill="#8a96a8" fill-opacity=".55" stroke="${css("--text")}" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+    g += `<text x="${pad + (u.x + u.l / 2) * s}" y="${pad + (u.y + u.w / 2) * s}" font-size="${fs - 2}" font-weight="700" text-anchor="middle" dominant-baseline="middle" fill="#fff" stroke="#0009" stroke-width="3" paint-order="stroke">AC</text>`;
+  }
+  for (const l of d.labels) {
+    if (l.section && l.x > 0) g += `<line x1="${pad + l.x * s}" x2="${pad + l.x * s}" y1="${pad}" y2="${pad + T.W * s}" stroke="${css("--text")}" stroke-width="2" stroke-dasharray="6 4"/>`;
+    g += `<text x="${pad + (l.x + l.w / 2) * s}" y="${pad + (off + l.y + l.d / 2) * s}" font-size="${fs + 1}" font-weight="700" text-anchor="middle" dominant-baseline="middle" fill="#fff" stroke="#0009" stroke-width="3" paint-order="stroke">${esc(l.text)}</text>`;
+  }
+  g += `</g>`;
+  g += `<text x="${W / 2}" y="${H - fs * .6}" font-size="${fs - 1}" text-anchor="middle" fill="${css("--muted")}">${W < 600 ? "" : `Length ${cm(T.L)} · Width ${cm(T.W)} · `}${esc(d.caption)}</text>`;
+  svg.innerHTML = g;
+}
+function drawSide(svg, d, W = 1000) {
+  if (!d) { svg.innerHTML = ""; return; }
+  const fs = W < 600 ? 11 : 14, pad = W < 600 ? 8 : 40, top = fs * 2.2;
+  const T = d.T, s = (W - 2 * pad) / T.L, H = T.H * s + top + fs * 2.4, base = top + T.H * s;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  let g = `<rect x="${pad}" y="${top}" width="${T.L * s}" height="${T.H * s}" fill="none" stroke="${css("--truck")}" stroke-width="2"/>`;
+  g += `<text x="${pad}" y="${top - fs * .7}" font-size="${fs}" fill="${css("--muted")}">◀ CABIN</text>`;
+  g += `<text x="${pad + T.L * s}" y="${top - fs * .7}" font-size="${fs}" text-anchor="end" fill="${css("--muted")}">DOOR ▶</text>`;
+  // Only the side-wall row (y = 0) is visible from the side.
+  for (const p of d.list) if (p.y === 0)
+    g += `<rect x="${pad + p.x * s}" y="${base - (p.z + p.h) * s}" width="${p.l * s}" height="${p.h * s}" fill="${p.color}" fill-opacity=".85" stroke="${css("--card")}" stroke-width="1"/>`;
+  if (d.ac) {
+    const u = d.ac.unit;
+    g += `<rect x="${pad + u.x * s}" y="${base - (u.z + u.h) * s}" width="${u.l * s}" height="${u.h * s}" fill="#8a96a8" fill-opacity=".7" stroke="${css("--text")}" stroke-width="1.5"/>`;
+    g += `<text x="${pad + (u.x + u.l / 2) * s}" y="${base - (u.z + u.h / 2) * s}" font-size="${fs - 2}" font-weight="700" text-anchor="middle" dominant-baseline="middle" fill="#fff" stroke="#0009" stroke-width="3" paint-order="stroke">AC</text>`;
+  }
+  if (d.gaps.top > 0) {
+    const lim = top + d.gaps.top * s;
+    g += `<line x1="${pad}" x2="${pad + T.L * s}" y1="${lim}" y2="${lim}" stroke="${css("--gap")}" stroke-width="2" stroke-dasharray="8 6"/>`;
+    g += `<text x="${W / 2}" y="${H - fs * .6}" font-size="${fs - 1}" text-anchor="middle" fill="${css("--gap")}">- - Load line (${cm(d.gaps.top)} top clearance)</text>`;
+  } else {
+    g += `<text x="${W / 2}" y="${H - fs * .6}" font-size="${fs - 1}" text-anchor="middle" fill="${css("--muted")}">Height ${cm(T.H)} · ${esc(d.caption)}</text>`;
+  }
+  svg.innerHTML = g;
+}
+
+// ============================================================
+// Wiring
+// ============================================================
+const viewers = { single: new Viewer("s"), mix: new Viewer("m"), pallet: new Viewer("p") };
+const MODES = ["single", "mix", "pallet", "settings"];
+function setMode(m) {
+  S.mode = m; save();
+  document.querySelectorAll("#modeTabs button").forEach(b => b.classList.toggle("active", b.dataset.m === m));
+  MODES.forEach(x => $("mode-" + x).classList.toggle("hidden", x !== m));
+  if (m === "single") renderSingle();
+  if (m === "pallet") renderPallet();
+  if (m === "mix") { renderMixInputs(); renderMix(); }
+  if (m === "settings") renderSettings();
+  Object.values(viewers).forEach(v => v.gl && v.gl.resize());
+}
+$("modeTabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) setMode(b.dataset.m); });
+document.addEventListener("click", e => {
+  const a = e.target.closest("[data-goto]"); if (a) { e.preventDefault(); setMode(a.dataset.goto); }
+  if (e.target.closest("[data-print]")) window.print();
+});
+
+// Single mode inputs
+const sFields = { "s-L": "L", "s-W": "W", "s-H": "H", "s-wt": "wt", "s-maxL": "maxL" };
+// Typing recalculates after a short pause so large layouts don't lag each keystroke.
+const debounce = (fn, ms = 150) => { let t; return () => { clearTimeout(t); t = setTimeout(fn, ms); }; };
+const scheduleSingle = debounce(() => renderSingle()), schedulePallet = debounce(() => renderPallet());
+Object.entries(sFields).forEach(([id, f]) => { $(id).value = S.single[f]; $(id).addEventListener("input", e => { S.single[f] = e.target.value; save(); scheduleSingle(); }); });
+$("s-rot").checked = S.single.rot; $("s-up").checked = S.single.up; $("s-unit").value = S.single.unit;
+$("s-rot").addEventListener("change", e => { S.single.rot = e.target.checked; save(); renderSingle(); });
+$("s-up").addEventListener("change", e => { S.single.up = e.target.checked; save(); renderSingle(); });
+$("s-adjust").checked = S.single.adjust;
+$("s-adjust").addEventListener("change", e => { S.single.adjust = e.target.checked; save(); renderSingle(); });
+$("s-block").checked = !!S.single.block;
+$("s-block").addEventListener("change", e => { S.single.block = e.target.checked; save(); renderSingle(); });
+$("s-unit").addEventListener("change", e => {
+  const k = TO_MM[S.single.unit] / TO_MM[e.target.value];
+  ["L", "W", "H"].forEach(f => { if (S.single[f] !== "") S.single[f] = +(S.single[f] * k).toFixed(2); $("s-" + f).value = S.single[f]; });
+  S.single.unit = e.target.value; save(); renderSingle();
+});
+$("s-vehicles").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { S.single.veh = b.dataset.id; save(); renderSingle(); } });
+$("s-allveh").addEventListener("click", e => { const r = e.target.closest("tr[data-veh]"); if (r) { S.single.veh = r.dataset.veh; save(); renderSingle(); } });
+
+// Pallet inputs
+const pFields = ["L", "W", "base", "H", "wt", "maxS", "bL", "bW", "bH", "maxLoad"];
+pFields.forEach(f => {
+  $("p-" + f).value = S.pallet[f];
+  $("p-" + f).addEventListener("input", e => {
+    S.pallet[f] = e.target.value;
+    if (f === "L" || f === "W") { S.pallet.preset = "custom"; $("p-preset").value = "custom"; }
+    save(); schedulePallet();
+  });
+});
+$("p-unit").value = S.pallet.unit; $("p-preset").value = S.pallet.preset;
+$("p-rot").checked = S.pallet.rot; $("p-stack").checked = S.pallet.stack;
+$("p-rot").addEventListener("change", e => { S.pallet.rot = e.target.checked; save(); renderPallet(); });
+$("p-stack").addEventListener("change", e => { S.pallet.stack = e.target.checked; save(); renderPallet(); });
+$("p-block").checked = !!S.pallet.block;
+$("p-block").addEventListener("change", e => { S.pallet.block = e.target.checked; save(); renderPallet(); });
+$("p-preset").addEventListener("change", e => {
+  S.pallet.preset = e.target.value;
+  if (e.target.value !== "custom") {
+    const [l, w] = e.target.value.split("x").map(Number), k = 10 / TO_MM[S.pallet.unit]; // presets are in cm
+    S.pallet.L = +(l * k).toFixed(2); S.pallet.W = +(w * k).toFixed(2);
+    $("p-L").value = S.pallet.L; $("p-W").value = S.pallet.W;
+  }
+  save(); renderPallet();
+});
+$("p-unit").addEventListener("change", e => {
+  const k = TO_MM[S.pallet.unit] / TO_MM[e.target.value];
+  ["L", "W", "base", "H", "bL", "bW", "bH", "maxLoad"].forEach(f => { if (S.pallet[f] !== "") S.pallet[f] = +(S.pallet[f] * k).toFixed(2); $("p-" + f).value = S.pallet[f]; });
+  S.pallet.unit = e.target.value; save(); renderPallet();
+});
+$("p-vehicles").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { S.pallet.veh = b.dataset.id; save(); renderPallet(); } });
+$("p-allveh").addEventListener("click", e => { const r = e.target.closest("tr[data-veh]"); if (r) { S.pallet.veh = r.dataset.veh; save(); renderPallet(); } });
+
+// Load planner inputs
+$("m-items").addEventListener("input", e => {
+  const box = e.target.closest(".item"), f = e.target.dataset.f; if (!box || !f) return;
+  const it = S.mix.items[+box.dataset.i];
+  it[f] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
+  save(); scheduleMix();
+});
+$("m-items").addEventListener("click", e => {
+  const d = e.target.closest("[data-del]"); if (!d) return;
+  S.mix.items.splice(+d.dataset.del, 1); save(); renderMixInputs(); renderMix();
+});
+$("m-add").addEventListener("click", () => {
+  const last = S.mix.items[S.mix.items.length - 1];
+  S.mix.items.push({ name: `Box ${String.fromCharCode(65 + S.mix.items.length)}`, unit: (last && last.unit) || S.mix.unit, L: "", W: "", H: "", qty: "", wt: "", maxL: "", up: true, rot: true });
+  save(); renderMixInputs(); renderMix();
+});
+$("m-fill").addEventListener("change", e => { S.mix.fill = e.target.checked; save(); renderMix(); });
+$("m-adjust").addEventListener("change", e => { S.mix.adjust = e.target.checked; save(); renderMix(); });
+$("m-block").addEventListener("change", e => { S.mix.block = e.target.checked; save(); renderMix(); });
+$("m-target").addEventListener("change", e => { S.mix.target = e.target.value; selPlan = 0; selTruck = 0; save(); renderMix(); });
+$("m-vehicles").addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; S.mix.off[b.dataset.id] = !S.mix.off[b.dataset.id]; save(); renderMix(); });
+$("m-plans").addEventListener("click", e => { const r = e.target.closest("tr[data-plan]"); if (!r) return; selPlan = +r.dataset.plan; selTruck = 0; renderMix(); });
+$("m-trucks").addEventListener("click", e => { const b = e.target.closest("button[data-truck]"); if (!b) return; selTruck = +b.dataset.truck; renderTruck(); });
+
+// Vehicle settings inputs
+$("v-table").addEventListener("input", e => {
+  const tr = e.target.closest("tr[data-i]"), f = e.target.dataset.f; if (!tr || !f) return;
+  const v = S.vehicles[+tr.dataset.i];
+  v[f] = f === "name" || f === "acType" ? e.target.value : (e.target.value === "" ? "" : +e.target.value);
+  packCache.clear(); save();
+  if (f === "acType") renderSettings(); // enable/disable the AC size fields
+});
+$("v-table").addEventListener("click", e => {
+  const d = e.target.closest("[data-del]"); if (!d) return;
+  if (!confirm(`Delete "${S.vehicles[+d.dataset.del].name}"?`)) return;
+  S.vehicles.splice(+d.dataset.del, 1); save(); renderSettings();
+});
+$("v-add").addEventListener("click", () => {
+  S.vehicles.push({ id: "v" + Date.now(), name: "New vehicle", L: 17, W: 6.5, H: 6.5, kg: 5000, rate: "", ...DEFAULT_AC["14"] });
+  save(); renderSettings();
+});
+$("v-reset").addEventListener("click", () => {
+  if (!confirm("Reset all vehicles to default dimensions?")) return;
+  S.vehicles = clone(DEFAULT_VEHICLES); save(); renderSettings();
+});
+$("v-export").addEventListener("click", () => {
+  const data = JSON.stringify({ app: "reefer-load-calculator", version: 1, vehicles: S.vehicles, gaps: S.gaps }, null, 2);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
+  a.download = "reefer-settings.json";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  $("v-msg").innerHTML = `<div class="msg ok">Settings exported (reefer-settings.json, ${S.vehicles.length} vehicles).</div>`;
+});
+$("v-import").addEventListener("click", () => $("v-file").click());
+$("v-file").addEventListener("change", e => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  file.text().then(txt => {
+    const d = JSON.parse(txt);
+    const num = x => x === "" || (isFinite(+x) && +x >= 0);
+    const ok = d && Array.isArray(d.vehicles) && d.vehicles.length && d.vehicles.every(v => v && typeof v.name === "string" && +v.L > 0 && +v.W > 0 && +v.H > 0 && num(v.kg ?? "") && num(v.rate ?? ""));
+    if (!ok) throw new Error("not a settings file");
+    if (!confirm(`Replace your ${S.vehicles.length} vehicles with ${d.vehicles.length} from "${file.name}"?`)) return;
+    const ids = new Set();
+    S.vehicles = d.vehicles.map((v, i) => ({
+      id: (() => { let id = String(v.id || ""); if (!id || ids.has(id)) id = "v" + Date.now() + "_" + i; ids.add(id); return id; })(), name: v.name, L: +v.L, W: +v.W, H: +v.H, kg: v.kg === "" ? "" : +(v.kg || 0), rate: v.rate ?? "",
+      ...(v.acType === undefined ? DEFAULT_AC[v.id] || { acType: "none", acW: "", acH: "", acD: "" } : { acType: AC_TYPES[v.acType] ? v.acType : "none", acW: v.acW, acH: v.acH, acD: v.acD })
+    }));
+    if (d.gaps) S.gaps = { ...DEFAULT_STATE.gaps, ...d.gaps };
+    packCache.clear(); save(); renderSettings();
+    $("v-msg").innerHTML = `<div class="msg ok">Imported ${S.vehicles.length} vehicles from ${esc(file.name)}.</div>`;
+  }).catch(err => { $("v-msg").innerHTML = `<div class="msg">Could not import ${esc(file.name)}: ${esc(err.message)}.</div>`; });
+});
+[["g-top", "top"], ["g-door", "door"], ["g-side", "side"], ["g-ac", "ac"]].forEach(([id, f]) =>
+  $(id).addEventListener("input", e => { S.gaps[f] = e.target.value; save(); }));
+
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setMode(S.mode));
+window.addEventListener("beforeprint", () => Object.values(viewers).forEach(v => v.show(v.data)));
+let resizeTimer, lastWidth = innerWidth;
+window.addEventListener("resize", () => {
+  if (innerWidth === lastWidth) return; // ignore mobile address-bar height changes
+  lastWidth = innerWidth;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => Object.values(viewers).forEach(v => v.draw2D()), 150);
+});
+
+// 3D bridge: the module below calls this once three.js has loaded.
+window.__onThree = make3D => Object.values(viewers).forEach(v => v.attach3D(make3D));
+setTimeout(() => document.querySelectorAll(".view3d .fallback").forEach(f =>
+  f.textContent = "3D view requires an internet connection. Top and Side views work offline."), 6000);
+
+renderMixInputs();
+const hashMode = location.hash.slice(1);
+setMode(MODES.includes(hashMode) ? hashMode : MODES.includes(S.mode) ? S.mode : "single");
+</script>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+function make3D(el, slider, label) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  el.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 200);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  // Draw only when something changes; a permanent animation loop per view drains phone batteries.
+  const render = () => renderer.render(scene, camera);
+  controls.addEventListener("change", render);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x667788, 1.6));
+  const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(5, 10, 7); scene.add(sun);
+  const cssColor = v => new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+  let group = new THREE.Group(), mesh = null, total = 0, lastKey = "";
+  scene.add(group);
+
+  function resize() {
+    const w = el.clientWidth, h = el.clientHeight;
+    if (!w) return;
+    renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+    controls.update(); render();
+  }
+  new ResizeObserver(resize).observe(el);
+
+  function update(d) {
+    scene.remove(group);
+    group.traverse(o => { o.geometry?.dispose(); o.material?.dispose(); });
+    group = new THREE.Group(); scene.add(group); mesh = null;
+    if (!d) { slider.max = 0; label.textContent = ""; render(); return; }
+    const m = 0.001, T = d.T;
+    // x = truck length (cabin at x = 0), y = up, z = width
+    const body = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(T.L * m, T.H * m, T.W * m)), new THREE.LineBasicMaterial({ color: cssColor("--truck") }));
+    body.position.set(T.L * m / 2, T.H * m / 2, T.W * m / 2); group.add(body);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(T.L * m, T.W * m), new THREE.MeshBasicMaterial({ color: cssColor("--truck"), transparent: true, opacity: .18, side: THREE.DoubleSide }));
+    floor.rotation.x = -Math.PI / 2; floor.position.set(T.L * m / 2, 0, T.W * m / 2); group.add(floor);
+    const cab = new THREE.Mesh(new THREE.PlaneGeometry(T.W * m, T.H * m), new THREE.MeshBasicMaterial({ color: cssColor("--accent"), transparent: true, opacity: .15, side: THREE.DoubleSide }));
+    cab.rotation.y = Math.PI / 2; cab.position.set(0, T.H * m / 2, T.W * m / 2); group.add(cab);
+    if (d.ac) {
+      // Reefer evaporator: x = depth from the front wall, y = hangs down from the ceiling, z = across the width.
+      const u = d.ac.unit, geo = new THREE.BoxGeometry(u.l * m, u.h * m, u.w * m);
+      const unit = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x9aa4b2, roughness: .4, metalness: .3 }));
+      unit.position.set((u.x + u.l / 2) * m, (u.z + u.h / 2) * m, (u.y + u.w / 2) * m);
+      group.add(unit);
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x33404f }));
+      edges.position.copy(unit.position); group.add(edges);
+    }
+
+    total = d.list.length;
+    mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ roughness: .7 }), Math.max(total, 1));
+    const dummy = new THREE.Object3D(), col = new THREE.Color(), shrink = 0.94, off = d.gaps.side;
+    d.list.forEach((p, i) => {
+      dummy.position.set((p.x + p.l / 2) * m, (p.z + p.h / 2) * m, (off + p.y + p.w / 2) * m);
+      dummy.scale.set(p.l * m * shrink, p.h * m * shrink, p.w * m * shrink);
+      dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
+      col.set(p.color).offsetHSL(0, 0, ((i * 7919) % 11 - 5) * 0.008);
+      mesh.setColorAt(i, col);
+    });
+    group.add(mesh);
+    slider.max = total; slider.value = total; showStep();
+
+    // Keep the camera where the user left it unless the truck changed.
+    const key = [T.L, T.W, T.H].join("|");
+    if (key !== lastKey) {
+      lastKey = key;
+      controls.target.set(T.L * m / 2, T.H * m / 3, T.W * m / 2);
+      camera.position.set(T.L * m * 1.05, T.H * m * 2.2, T.W * m * 2.6 + Math.max(T.L, T.W, T.H) * m * 0.6);
+    }
+    resize();
+  }
+  function showStep() {
+    if (!mesh) return;
+    mesh.count = +slider.value;
+    label.textContent = `${slider.value} / ${total}`;
+    render();
+  }
+  slider.addEventListener("input", showStep);
+  return { update, resize };
+}
+window.__onThree(make3D);
+</script>
+</body>
+</html>
